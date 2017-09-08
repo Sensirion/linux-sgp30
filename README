@@ -1,0 +1,36 @@
+= This repository contains the SGP30/SGPC3 kernel driver =
+
+The sgpxx driver for the Sensirion SGP30 and SGPC3 drivers is based on the IIO
+subsystem
+
+== Directory Structure ==
+/:      The root directory contains the Makefile needed for out-of-tree
+        module builds.
+
+/sgpxx: The sgpxx directory contains the driver source and Kconfig as needed
+        for upstream merging with the Linux sources.
+
+== Usage ==
+The driver is meant for direct use with sysfs or libiio
+Errors are printed to the kernel log (dmesg)
+
+=== Loading ===
+Load the kernel module with insmod sgpxx.ko (out-of-tree build) or
+modprobe sgpxx
+
+=== Instantiation ===
+Instantiate the driver on the correct i2c bus with
+echo sgpxx 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/new_device >/dev/null
+(sgpxx, sgp30 or sgpc3 are permissible names - which name does not matter)
+
+=== Operation ===
+Query device files by reading from the iio subsytem's device:
+$ cat /sys/bus/iio/devices/iio\:device0/in_selftest
+OK
+
+..or alternatively by the i2c bus: /sys/bus/i2c/devices/1-0058/iio\:device0/
+
+=== Unloading ===
+echo 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/delete_device >/dev/null
+rmmod sgpxx
+
