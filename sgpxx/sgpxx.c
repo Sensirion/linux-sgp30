@@ -15,11 +15,6 @@
  *
  */
 
-/* Sensirion SGP30 Preliminary Datasheet:
- * https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/
- * Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGP_Preliminary_Datasheet_EN.pdf
- */
-
 #include <linux/crc8.h>
 #include <linux/delay.h>
 #include <linux/module.h>
@@ -37,7 +32,6 @@
 #define SGP_CMD_DURATION_US		10000
 #define SGP_CMD_LEN			SGP_WORD_LEN
 #define SGP_MEASUREMENT_LEN		6
-
 
 DECLARE_CRC8_TABLE(sgp_crc8_table);
 
@@ -82,8 +76,8 @@ union sgp_reading {
 
 struct sgp_data {
 	struct i2c_client *client;
-	struct mutex data_lock;
-	struct mutex i2c_lock;
+	struct mutex data_lock; /* mutex to lock access to data buffer */
+	struct mutex i2c_lock; /* mutex to lock access to i2c */
 	unsigned long last_update;
 
 	union sgp_reading buffer;
@@ -110,8 +104,8 @@ static const struct iio_chan_spec sgp_channels[] = {
 	},
 	{
 		.type = IIO_CONCENTRATION, /* IIO_CONCENTRATION_RATIO */
-		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
-					BIT(IIO_CHAN_INFO_SCALE),
+		.info_mask_separate =
+			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
 		.address = SGP_SIG_ETOH_IDX,
 		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
@@ -122,8 +116,8 @@ static const struct iio_chan_spec sgp_channels[] = {
 	},
 	{
 		.type = IIO_CONCENTRATION, /* IIO_CONCENTRATION_RATIO */
-		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
-					BIT(IIO_CHAN_INFO_SCALE),
+		.info_mask_separate =
+			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
 		.address = SGP_SIG_H2_IDX,
 		.extend_name = "h2",
 		.datasheet_name = "H2 signal",
@@ -136,7 +130,7 @@ static const struct iio_chan_spec sgp_channels[] = {
 };
 
 static ssize_t sgp_selftest_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
+				 struct device_attribute *attr, char *buf)
 {
 	//struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 	strncpy(buf, "OK", 3);
@@ -144,8 +138,7 @@ static ssize_t sgp_selftest_show(struct device *dev,
 }
 
 static IIO_CONST_ATTR(in_gas_signal_ratio_scale, "0.001953125"); /* 1/512 */
-static IIO_DEVICE_ATTR(in_selftest, S_IRUGO, sgp_selftest_show,
-			NULL, 0);
+static IIO_DEVICE_ATTR(in_selftest, 0400, sgp_selftest_show, NULL, 0);
 
 static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_selftest.dev_attr.attr,
@@ -171,9 +164,9 @@ static const struct attribute_group sgp_attr_group = {
  * Return:      0 on success, negative error code otherwise
  */
 static int sgp_i2c_read(struct i2c_client *client,
-					struct sgp_data *data,
-					u16 *word_buf,
-					size_t word_count)
+			struct sgp_data *data,
+			u16 *word_buf,
+			size_t word_count)
 {
 	int ret;
 	int i, w;
@@ -195,24 +188,22 @@ static int sgp_i2c_read(struct i2c_client *client,
 	mutex_unlock(&data->i2c_lock);
 
 	for (i = 0, w = 0; i < size;
-		i += SGP_WORD_LEN + SGP_CRC8_LEN, w += 1)
-	{
-		crc = crc8(sgp_crc8_table, &data_buf[i],
-				SGP_WORD_LEN,
-				SGP_CRC8_INIT);
+		i += SGP_WORD_LEN + SGP_CRC8_LEN, w += 1) {
+		crc = crc8(sgp_crc8_table, &data_buf[i], SGP_WORD_LEN,
+			   SGP_CRC8_INIT);
 		if (crc != data_buf[i + SGP_WORD_LEN]) {
 			dev_err(&client->dev, "CRC error\n");
 			return -EIO;
 		}
 
-		word_buf[w] = be16_to_cpup((__be16 *) &data_buf[i]);
+		word_buf[w] = be16_to_cpup((__be16 *)&data_buf[i]);
 	}
 
 	return 0;
 
 fail_unlock:
-    mutex_unlock(&data->i2c_lock);
-    return ret;
+	mutex_unlock(&data->i2c_lock);
+	return ret;
 }
 
 /**
@@ -226,23 +217,21 @@ fail_unlock:
  * Return:      0 on success, negative error otherwise.
  */
 static int sgp_read_from_cmd(struct i2c_client *client,
-					struct sgp_data *data,
-					enum sgp_cmd cmd,
-					u16 *word_buf,
-					size_t word_count)
+			     struct sgp_data *data,
+			     enum sgp_cmd cmd,
+			     u16 *word_buf,
+			     size_t word_count)
 {
 	int ret;
 
 	mutex_lock(&data->i2c_lock);
-	ret = i2c_master_send(client, (const char *) &cmd,
-				SGP_CMD_LEN);
+	ret = i2c_master_send(client, (const char *)&cmd, SGP_CMD_LEN);
 	if (ret != SGP_CMD_LEN) {
 		mutex_unlock(&data->i2c_lock);
 		return -EIO;
 	}
 	/* Wait inside lock to ensure the chip is ready before next command */
-	usleep_range(SGP_CMD_DURATION_US,
-			SGP_CMD_DURATION_US + 1000);
+	usleep_range(SGP_CMD_DURATION_US, SGP_CMD_DURATION_US + 1000);
 	mutex_unlock(&data->i2c_lock);
 
 	mutex_lock(&data->data_lock);
@@ -251,7 +240,6 @@ static int sgp_read_from_cmd(struct i2c_client *client,
 
 	return ret;
 }
-
 
 static int sgp_read_measurement(struct sgp_data *data)
 {
@@ -262,7 +250,7 @@ static int sgp_read_measurement(struct sgp_data *data)
 		.addr = client->addr,
 		.flags = client->flags | I2C_M_RD,
 		.len = SGP_MEASUREMENT_LEN,
-		.buf = (char *) &data->buffer,
+		.buf = (char *)&data->buffer,
 	};
 
 	ret = i2c_transfer(client->adapter, &msg, 1);
@@ -309,7 +297,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 	// ret = sgp_get_measurement(data);
 
 	// if (ret)
-	// 	goto err_out;
+	//	goto err_out;
 
 	switch (chan->address) {
 	case SGP_IAQ_TVOC_IDX:
@@ -349,7 +337,7 @@ static const struct iio_info sgp_info = {
 };
 
 static int sgp_probe(struct i2c_client *client,
-			const struct i2c_device_id *id)
+		     const struct i2c_device_id *id)
 {
 	struct iio_dev *indio_dev;
 	struct sgp_data *data;
