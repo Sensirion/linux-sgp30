@@ -1,0 +1,51 @@
+image: sensirion/python
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  PACKAGE_NAME: "sgpxx"
+
+test:
+  stage: test
+  tags:
+    - linux
+    - docker
+  script:
+    - apt-get update && apt-get install -y linux-headers-generic
+    - export KERNELDIR=/lib/modules/$(uname -r)/build/
+    - ${KERNELDIR}/scripts/checkpatch.pl -no-tree -f --strict sgpxx/sgpxx.c
+    - make clean && make
+
+build:
+  stage: build
+  tags:
+    - linux
+    - docker
+  only:
+    - master
+  script:
+    - mkdir -p dist
+    - git archive master -o dist/${PACKAGE_NAME}-snapshot.tar.gz
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - dist/*.tar.gz
+
+build:
+  stage: build
+  tags:
+    - linux
+    - docker
+  only:
+    - tags
+  script:
+    - mkdir -p dist
+    - TAG_VERSION=$(git describe --tags)
+    - git archive master -o dist/${PACKAGE_NAME}-${TAG_VERSION}.tar.gz
+  artifacts:
+    paths:
+      - dist/*.tar.gz
+
