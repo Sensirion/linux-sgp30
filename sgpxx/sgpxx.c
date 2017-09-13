@@ -98,7 +98,7 @@ struct sgp_gas_signal_reading {
 
 union sgp_reading {
 	u8 start;
-	struct sgp_crc_word raw_word;
+	struct sgp_crc_word raw_words[2];
 	struct sgp_iaq_reading iaq_reading;
 	struct sgp_gas_signal_reading gas_signal_reading;
 };
@@ -116,6 +116,8 @@ struct sgp_data {
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_signal_cmd;
 	enum sgp_measure_mode measure_mode;
+	u8 baseline_len;
+	char *baseline_format;
 };
 
 struct sgp_device {
@@ -173,10 +175,9 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.address = SGP30_AH_IDX,
 		.extend_name = "ah",
 		.datasheet_name = "absolute humidty",
-		.info_mask_separate =
-			BIT(IIO_CHAN_INFO_RAW),
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
 		.output = 1,
-		.scan_index = 2
+		.scan_index = 3
 	},
 };
 
@@ -269,7 +270,6 @@ fail_unlock:
 
 /**
  * sgp_i2c_read_from_cmd() - reads data from SGP sensor after issuing a command
- * @client:     I2C client device
  * @data:       SGP data
  * @cmd:        SGP Command to issue
  * @word_count: Num words to read, excluding CRC bytes
@@ -298,6 +298,53 @@ static int sgp_read_from_cmd(struct sgp_data *data,
 	ret = sgp_i2c_read(client, data, word_count);
 	mutex_unlock(&data->data_lock);
 
+	return ret;
+}
+
+/**
+ * sgp_i2c_write_from_cmd() - write data to SGP sensor with a command
+ * @data:       SGP data
+ * @cmd:        SGP Command to issue
+ * @buf:	Data to write
+ * @buf_size:	Data size of the buffer
+ *
+ * Return:      0 on success, negative error otherwise.
+ */
+static int sgp_write_from_cmd(struct sgp_data *data,
+			      enum sgp_cmd cmd,
+			      u16 *buf,
+			      size_t buf_size,
+			      unsigned long duration_us)
+{
+	int ret, ix;
+	u16 buf_idx = 0;
+	u16 buffer_size = SGP_CMD_LEN + buf_size *
+		(SGP_WORD_LEN + SGP_CRC8_LEN);
+	u8 buffer[buffer_size];
+
+	/* assemble buffer */
+	*((u16 *)&buffer[0]) = cmd;
+	buf_idx += SGP_CMD_LEN;
+	for (ix = 0; ix < buf_size; ix++) {
+		*((u16 *)&buffer[buf_idx]) = ntohs(buf[ix] & 0xFFFF);
+		buf_idx += SGP_WORD_LEN;
+		buffer[buf_idx] = crc8(sgp_crc8_table,
+				       &buffer[buf_idx - SGP_WORD_LEN],
+				       SGP_WORD_LEN, SGP_CRC8_INIT);
+		buf_idx += SGP_CRC8_LEN;
+	}
+	mutex_lock(&data->i2c_lock);
+	ret = i2c_master_send(data->client, buffer, buffer_size);
+	if (ret != buffer_size) {
+		ret = -EIO;
+		goto unlock_return_count;
+	}
+	ret = 0;
+	/* Wait inside lock to ensure the chip is ready before next command */
+	usleep_range(duration_us, duration_us + 500);
+
+unlock_return_count:
+	mutex_unlock(&data->i2c_lock);
 	return ret;
 }
 
@@ -331,12 +378,8 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 static int sgp_absolute_humidity_store(struct sgp_data *data,
 				       int val, int val2)
 {
-	int ret;
 	u32 ah;
 	u16 ah_scaled;
-	u16 buf_idx = 0;
-	u16 buf_size = SGP_CMD_LEN + SGP_WORD_LEN + SGP_CRC8_LEN;
-	u8 buffer[SGP_CMD_LEN + SGP_WORD_LEN + SGP_CRC8_LEN];
 
 	if (val < 0 || val > 256 || (val == 256 && val2 > 0))
 		return -EINVAL;
@@ -349,28 +392,8 @@ static int sgp_absolute_humidity_store(struct sgp_data *data,
 	if (ah > 0 && ah_scaled == 0)
 		ah_scaled = 1;
 
-	/* assemble buffer */
-	*((u16 *)&buffer[0]) = SGP30_CMD_ABSOLUTE_HUMIDITY;
-	buf_idx += SGP_CMD_LEN;
-	*((u16 *)&buffer[buf_idx]) = ntohs(ah_scaled & 0xFFFF);
-	buf_idx += SGP_WORD_LEN;
-	buffer[buf_idx] = crc8(sgp_crc8_table, &buffer[buf_idx - SGP_WORD_LEN],
-			       SGP_WORD_LEN, SGP_CRC8_INIT);
-
-	mutex_lock(&data->i2c_lock);
-	ret = i2c_master_send(data->client, buffer, buf_size);
-	if (ret != buf_size) {
-		ret = -EIO;
-		goto unlock_return_count;
-	}
-	ret = 0;
-	/* Wait inside lock to ensure the chip is ready before next command */
-	usleep_range(SGP_CMD_HANDLING_DURATION_US,
-		     SGP_CMD_HANDLING_DURATION_US + 500);
-
-unlock_return_count:
-	mutex_unlock(&data->i2c_lock);
-	return ret;
+	return sgp_write_from_cmd(data, SGP30_CMD_ABSOLUTE_HUMIDITY,
+				  &ah_scaled, 1, SGP_CMD_HANDLING_DURATION_US);
 }
 
 static int sgp_read_raw(struct iio_dev *indio_dev,
@@ -466,7 +489,7 @@ static int sgp_write_raw(struct iio_dev *indio_dev,
 
 static ssize_t sgp_iaq_init_store(struct device *dev,
 				  struct device_attribute *attr,
-				  const char *buf, size_t len)
+				  const char *buf, size_t count)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 	int ret;
@@ -477,7 +500,64 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	return len;
+	return count;
+}
+
+static ssize_t sgp_iaq_baseline_show(struct device *dev,
+				     struct device_attribute *attr,
+				     char *buf)
+{
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+	u32 baseline;
+	u16 baseline_word;
+	int ret, ix;
+
+	ret = sgp_read_from_cmd(data, SGP_CMD_GET_BASELINE, data->baseline_len,
+				SGP_CMD_DURATION_US);
+
+	if (ret < 0)
+		return ret;
+
+	baseline = 0;
+	for (ix = 0; ix < data->baseline_len; ix++) {
+		baseline_word = be16_to_cpu(data->buffer.raw_words[ix].value);
+		baseline |=  baseline_word << (16 * ix);
+	}
+
+	return sprintf(buf, data->baseline_format, baseline);
+}
+
+static ssize_t sgp_iaq_baseline_store(struct device *dev,
+				      struct device_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+	int newline = (count > 0 && buf[count - 1] == '\n');
+	u16 words[2];
+	int ret = 0;
+
+	/* 1 word (4 bytes) per signal */
+	if (count - newline == (data->baseline_len * 4)) {
+		if (data->baseline_len == 1)
+			ret = sscanf(buf, "%04hx", &words[0]);
+		else if (data->baseline_len == 2)
+			ret = sscanf(buf, "%04hx%04hx", &words[0], &words[1]);
+		else
+			return -EIO;
+	}
+
+	/* Check if baseline format is correct */
+	if (ret != data->baseline_len) {
+		dev_err(&data->client->dev, "invalid baseline format\n");
+		return -EIO;
+	}
+
+	ret = sgp_write_from_cmd(data, SGP_CMD_SET_BASELINE, words,
+				 data->baseline_len, SGP_CMD_DURATION_US);
+	if (ret < 0)
+		return -EIO;
+
+	return count;
 }
 
 static ssize_t sgp_selftest_show(struct device *dev,
@@ -493,7 +573,7 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	measure_test = be16_to_cpu(data->buffer.raw_word.value);
+	measure_test = be16_to_cpu(data->buffer.raw_words[0].value);
 
 	return sprintf(buf, "%s\n",
 		       measure_test ^ SGP_SELFTEST_OK ? "FAILED" : "OK");
@@ -526,6 +606,8 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_interval_hz = SGP30_MEASURE_INTERVAL_HZ;
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_signal_cmd = SGP30_CMD_MEASURE_SIGNAL;
+		data->baseline_len = 2;
+		data->baseline_format = "%08x\n";
 		break;
 	case SGPC3:
 		supported_feature_sets = (u16 *)supported_feature_sets_sgpc3;
@@ -534,6 +616,8 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_interval_hz = SGPC3_MEASURE_INTERVAL_HZ;
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_signal_cmd = SGPC3_CMD_MEASURE_SIGNAL;
+		data->baseline_len = 1;
+		data->baseline_format = "%04x\n";
 		break;
 	default:
 		return -ENODEV;
@@ -551,10 +635,14 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 
 static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
 static IIO_DEVICE_ATTR(out_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
+static IIO_DEVICE_ATTR(in_iaq_baseline, 0444, sgp_iaq_baseline_show, NULL, 0);
+static IIO_DEVICE_ATTR(out_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
 
 static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_selftest.dev_attr.attr,
 	&iio_dev_attr_out_iaq_init.dev_attr.attr,
+	&iio_dev_attr_in_iaq_baseline.dev_attr.attr,
+	&iio_dev_attr_out_iaq_baseline.dev_attr.attr,
 	NULL
 };
 
@@ -608,7 +696,7 @@ static int sgp_probe(struct i2c_client *client,
 				SGP_CMD_DURATION_US);
 	if (ret != 0)
 		return ret;
-	data->feature_set = be16_to_cpu(data->buffer.raw_word.value);
+	data->feature_set = be16_to_cpu(data->buffer.raw_words[0].value);
 
 	ret = setup_and_check_sgp_data(data, chip_id);
 	if (ret < 0)
@@ -664,5 +752,6 @@ static struct i2c_driver sgp_driver = {
 module_i2c_driver(sgp_driver);
 
 MODULE_AUTHOR("Andreas Brauchli <andreas.brauchli@sensirion.com>");
+MODULE_AUTHOR("Pascal Sachs <pascal.sachs@sensirion.com>");
 MODULE_DESCRIPTION("Sensirion SGPxx gas sensors");
 MODULE_LICENSE("GPL v2");
