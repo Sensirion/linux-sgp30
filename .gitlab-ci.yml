@@ -34,8 +34,8 @@ build:
     paths:
       - dist/*.tar.gz
 
-build:
-  stage: build
+deploy:
+  stage: deploy
   tags:
     - linux
     - docker
