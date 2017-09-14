@@ -30,7 +30,7 @@
 #define SGP_CRC8_INIT			0xff
 #define SGP_CRC8_LEN			1
 #define SGP_CMD(cmd_word)		cpu_to_be16(cmd_word)
-#define SGP_CMD_DURATION_US		40000
+#define SGP_CMD_DURATION_US		50000
 #define SGP_SELFTEST_DURATION_US	220000
 #define SGP_CMD_HANDLING_DURATION_US    10000
 #define SGP_CMD_LEN			SGP_WORD_LEN
@@ -72,13 +72,23 @@ enum sgp_cmd {
 	SGP30_CMD_MEASURE_SIGNAL	= SGP_CMD(0x2050),
 	SGP30_CMD_ABSOLUTE_HUMIDITY	= SGP_CMD(0x2061),
 
+	SGPC3_CMD_IAQ_INIT0		= SGP_CMD(0x2089),
+	SGPC3_CMD_IAQ_INIT16		= SGP_CMD(0x2024),
+	SGPC3_CMD_IAQ_INIT64		= SGP_CMD(0x2003),
+	SGPC3_CMD_IAQ_INIT184		= SGP_CMD(0x206a),
 	SGPC3_CMD_MEASURE_SIGNAL	= SGP_CMD(0x204d),
 };
 
 enum sgp_measure_mode {
 	SGP_MEASURE_MODE_UNKNOWN,
 	SGP_MEASURE_MODE_IAQ,
-	SGP_MEASURE_MODE_SIGNAL
+	SGP_MEASURE_MODE_SIGNAL,
+	SGP_MEASURE_MODE_BOTH,
+};
+
+struct sgp_version {
+	u8 major;
+	u8 minor;
 };
 
 struct sgp_crc_word {
@@ -110,6 +120,7 @@ struct sgp_data {
 	unsigned long last_update;
 
 	union sgp_reading buffer;
+	u16 chip_id;
 	u16 feature_set;
 	u16 measurement_len;
 	int measure_interval_hz;
@@ -125,8 +136,19 @@ struct sgp_device {
 	int num_channels;
 };
 
-static const u16 supported_feature_sets_sgp30[] = { 1 };
-static const u16 supported_feature_sets_sgpc3[] = { 1 };
+static const struct sgp_version supported_versions_sgp30[] = {
+	{
+		.major = 1,
+		.minor = 0,
+	}
+};
+
+static const struct sgp_version supported_versions_sgpc3[] = {
+	{
+		.major = 0,
+		.minor = 4,
+	}
+};
 
 static const struct iio_chan_spec sgp30_channels[] = {
 	{
@@ -492,9 +514,35 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 				  const char *buf, size_t count)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+	u32 init_time;
+	enum sgp_cmd cmd;
 	int ret;
 
-	ret = sgp_read_from_cmd(data, SGP_CMD_IAQ_INIT, 0,
+	cmd = SGP_CMD_IAQ_INIT;
+	if (data->chip_id == SGPC3) {
+		ret = kstrtou32(buf, 10, &init_time);
+
+		if (ret)
+			init_time = 64;
+
+		switch (init_time) {
+		case 0:
+			cmd = SGPC3_CMD_IAQ_INIT0;
+			break;
+		case 16:
+			cmd = SGPC3_CMD_IAQ_INIT16;
+			break;
+		case 184:
+			cmd = SGPC3_CMD_IAQ_INIT184;
+			break;
+		case 64:
+		default:
+			cmd = SGPC3_CMD_IAQ_INIT64;
+			break;
+		}
+	}
+
+	ret = sgp_read_from_cmd(data, cmd, 0,
 				SGP_CMD_DURATION_US);
 
 	if (ret < 0)
@@ -583,7 +631,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 				    unsigned int chip_id)
 {
 	u16 minor, major, product, eng, ix, num_fs;
-	u16 *supported_feature_sets;
+	struct sgp_version *supported_versions;
 
 	product = (data->feature_set & 0xf000) >> 12;
 	eng = (data->feature_set & 0x0100) >> 8;
@@ -600,22 +648,26 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 
 	switch (product) {
 	case SGP30:
-		supported_feature_sets = (u16 *)supported_feature_sets_sgp30;
-		num_fs = ARRAY_SIZE(supported_feature_sets_sgp30);
+		supported_versions =
+			(struct sgp_version *)supported_versions_sgp30;
+		num_fs = ARRAY_SIZE(supported_versions_sgp30);
 		data->measurement_len = SGP30_MEASUREMENT_LEN;
 		data->measure_interval_hz = SGP30_MEASURE_INTERVAL_HZ;
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_signal_cmd = SGP30_CMD_MEASURE_SIGNAL;
+		data->chip_id = SGP30;
 		data->baseline_len = 2;
 		data->baseline_format = "%08x\n";
 		break;
 	case SGPC3:
-		supported_feature_sets = (u16 *)supported_feature_sets_sgpc3;
-		num_fs = ARRAY_SIZE(supported_feature_sets_sgpc3);
+		supported_versions =
+			(struct sgp_version *)supported_versions_sgpc3;
+		num_fs = ARRAY_SIZE(supported_versions_sgpc3);
 		data->measurement_len = SGPC3_MEASUREMENT_LEN;
 		data->measure_interval_hz = SGPC3_MEASURE_INTERVAL_HZ;
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_signal_cmd = SGPC3_CMD_MEASURE_SIGNAL;
+		data->chip_id = SGPC3;
 		data->baseline_len = 1;
 		data->baseline_format = "%04x\n";
 		break;
@@ -624,7 +676,11 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	};
 
 	for (ix = 0; ix < num_fs; ix++) {
-		if (major == supported_feature_sets[ix])
+		if (major == 0 && supported_versions[ix].major == major &&
+		    supported_versions[ix].minor == minor)
+			return 0;
+		else if (major > 0 && supported_versions[ix].major == major &&
+			 minor >= supported_versions[ix].minor)
 			return 0;
 	}
 
