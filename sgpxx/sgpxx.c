@@ -96,21 +96,9 @@ struct sgp_crc_word {
 	u8 crc8;
 } __attribute__((__packed__));
 
-struct sgp_iaq_reading {
-	struct sgp_crc_word tvoc_ppb;
-	struct sgp_crc_word co2eq_ppm;
-} __attribute__((__packed__));
-
-struct sgp_gas_signal_reading {
-	struct sgp_crc_word etoh_scaled_ticks;
-	struct sgp_crc_word h2_scaled_ticks;
-} __attribute__((__packed__));
-
 union sgp_reading {
 	u8 start;
 	struct sgp_crc_word raw_words[2];
-	struct sgp_iaq_reading iaq_reading;
-	struct sgp_gas_signal_reading gas_signal_reading;
 };
 
 struct sgp_data {
@@ -423,8 +411,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			int *val2, long mask)
 {
 	struct sgp_data *data = iio_priv(indio_dev);
-	struct sgp_gas_signal_reading gas_reading;
-	struct sgp_iaq_reading iaq_reading;
+	struct sgp_crc_word *words;
 	int ret;
 
 	switch (mask) {
@@ -433,17 +420,21 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 					  SGP_MEASURE_MODE_IAQ);
 		if (ret)
 			goto err_out;
-		iaq_reading = data->buffer.iaq_reading;
+		words = data->buffer.raw_words;
 		switch (chan->address) {
 		case SGP30_IAQ_TVOC_IDX:
+			*val = 0;
+			*val2 = be16_to_cpu(words[1].value);
+			ret = IIO_VAL_INT_PLUS_NANO;
+			break;
 		case SGPC3_IAQ_TVOC_IDX:
 			*val = 0;
-			*val2 = be16_to_cpu(iaq_reading.tvoc_ppb.value);
+			*val2 = be16_to_cpu(words[0].value);
 			ret = IIO_VAL_INT_PLUS_NANO;
 			break;
 		case SGP30_IAQ_CO2EQ_IDX:
 			*val = 0;
-			*val2 = be16_to_cpu(iaq_reading.co2eq_ppm.value);
+			*val2 = be16_to_cpu(words[0].value);
 			ret = IIO_VAL_INT_PLUS_MICRO;
 			break;
 		default:
@@ -456,15 +447,15 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 					  SGP_MEASURE_MODE_SIGNAL);
 		if (ret)
 			goto err_out;
-		gas_reading = data->buffer.gas_signal_reading;
+		words = data->buffer.raw_words;
 		switch (chan->address) {
 		case SGP30_SIG_ETOH_IDX:
-		case SGPC3_SIG_ETOH_IDX:
-			*val = be16_to_cpu(gas_reading.etoh_scaled_ticks.value);
+			*val = be16_to_cpu(words[1].value);
 			ret = IIO_VAL_INT;
 			break;
+		case SGPC3_SIG_ETOH_IDX:
 		case SGP30_SIG_H2_IDX:
-			*val = be16_to_cpu(gas_reading.h2_scaled_ticks.value);
+			*val = be16_to_cpu(words[0].value);
 			ret = IIO_VAL_INT;
 			break;
 		}
@@ -811,4 +802,4 @@ MODULE_AUTHOR("Andreas Brauchli <andreas.brauchli@sensirion.com>");
 MODULE_AUTHOR("Pascal Sachs <pascal.sachs@sensirion.com>");
 MODULE_DESCRIPTION("Sensirion SGPxx gas sensors");
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("0.1.0");
+MODULE_VERSION("0.1.1");
