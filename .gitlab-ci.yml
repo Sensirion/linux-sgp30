@@ -14,8 +14,8 @@ test:
     - linux
     - docker
   script:
-    - apt-get update && apt-get install -y linux-headers-generic
-    - export KERNELDIR=/lib/modules/$(uname -r)/build/
+    - apt-get update && apt-get install -y linux-headers-$(uname -r)
+    - export KERNELDIR=/lib/modules/$(uname -r)/build
     - ${KERNELDIR}/scripts/checkpatch.pl -no-tree -f --strict sgpxx/sgpxx.c
     - make clean && make
 
