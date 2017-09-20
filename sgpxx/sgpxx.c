@@ -35,7 +35,7 @@
 #define SGP_CMD_HANDLING_DURATION_US    10000
 #define SGP_CMD_LEN			SGP_WORD_LEN
 #define SGP30_MEASUREMENT_LEN		2
-#define SGPC3_MEASUREMENT_LEN		1
+#define SGPC3_MEASUREMENT_LEN		2
 #define SGP30_MEASURE_INTERVAL_HZ	1
 #define SGPC3_MEASURE_INTERVAL_HZ	2
 #define SGP_SELFTEST_OK			0xd400
@@ -66,6 +66,7 @@ enum sgp_cmd {
 	SGP_CMD_GET_BASELINE		= SGP_CMD(0x2015),
 	SGP_CMD_SET_BASELINE		= SGP_CMD(0x201e),
 	SGP_CMD_GET_FEATURE_SET		= SGP_CMD(0x202f),
+	SGP_CMD_GET_SERIAL_ID		= SGP_CMD(0x3682),
 	SGP_CMD_MEASURE_TEST		= SGP_CMD(0x2032),
 
 	SGP30_CMD_SET_ABSOLUTE_HUMIDITY = SGP_CMD(0x2061),
@@ -77,13 +78,14 @@ enum sgp_cmd {
 	SGPC3_CMD_IAQ_INIT64		= SGP_CMD(0x2003),
 	SGPC3_CMD_IAQ_INIT184		= SGP_CMD(0x206a),
 	SGPC3_CMD_MEASURE_SIGNAL	= SGP_CMD(0x204d),
+	SGPC3_CMD_MEASURE_RAW		= SGP_CMD(0x2046),
 };
 
 enum sgp_measure_mode {
 	SGP_MEASURE_MODE_UNKNOWN,
 	SGP_MEASURE_MODE_IAQ,
 	SGP_MEASURE_MODE_SIGNAL,
-	SGP_MEASURE_MODE_BOTH,
+	SGP_MEASURE_MODE_ALL,
 };
 
 struct sgp_version {
@@ -98,7 +100,7 @@ struct sgp_crc_word {
 
 union sgp_reading {
 	u8 start;
-	struct sgp_crc_word raw_words[2];
+	struct sgp_crc_word raw_words[4];
 };
 
 struct sgp_data {
@@ -110,6 +112,7 @@ struct sgp_data {
 	union sgp_reading buffer;
 	u16 chip_id;
 	u16 feature_set;
+	u64 serial_id;
 	u16 measurement_len;
 	int measure_interval_hz;
 	enum sgp_cmd measure_iaq_cmd;
@@ -363,6 +366,12 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 {
 	int ret;
 
+	/* if all channels are measured, we don't need to distinguish between
+	 * different measure modes
+	 */
+	if (data->measure_mode == SGP_MEASURE_MODE_ALL)
+		measure_mode = SGP_MEASURE_MODE_ALL;
+
 	/* Always measure if measure mode changed
 	 * SGP30 can only be polled once a second
 	 * SGPC3 can only be polled once every two seconds
@@ -423,13 +432,9 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 		words = data->buffer.raw_words;
 		switch (chan->address) {
 		case SGP30_IAQ_TVOC_IDX:
-			*val = 0;
-			*val2 = be16_to_cpu(words[1].value);
-			ret = IIO_VAL_INT_PLUS_NANO;
-			break;
 		case SGPC3_IAQ_TVOC_IDX:
 			*val = 0;
-			*val2 = be16_to_cpu(words[0].value);
+			*val2 = be16_to_cpu(words[1].value);
 			ret = IIO_VAL_INT_PLUS_NANO;
 			break;
 		case SGP30_IAQ_CO2EQ_IDX:
@@ -514,7 +519,7 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 		ret = kstrtou32(buf, 10, &init_time);
 
 		if (ret)
-			init_time = 64;
+			return -EINVAL;
 
 		switch (init_time) {
 		case 0:
@@ -523,13 +528,14 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 		case 16:
 			cmd = SGPC3_CMD_IAQ_INIT16;
 			break;
+		case 64:
+			cmd = SGPC3_CMD_IAQ_INIT64;
+			break;
 		case 184:
 			cmd = SGPC3_CMD_IAQ_INIT184;
 			break;
-		case 64:
 		default:
-			cmd = SGPC3_CMD_IAQ_INIT64;
-			break;
+			return -EINVAL;
 		}
 	}
 
@@ -618,6 +624,44 @@ static ssize_t sgp_selftest_show(struct device *dev,
 		       measure_test ^ SGP_SELFTEST_OK ? "FAILED" : "OK");
 }
 
+static ssize_t sgp_serial_id_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+
+	return sprintf(buf, "%llu\n", data->serial_id);
+}
+
+static ssize_t sgp_featureset_version_show(struct device *dev,
+					   struct device_attribute *attr,
+					   char *buf)
+{
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+
+	return sprintf(buf, "%hu.%hu\n", (data->feature_set & 0x00e0) >> 5,
+		       data->feature_set & 0X001f);
+}
+
+static int sgp_get_serial_id(struct sgp_data *data)
+{
+	int ret;
+	struct sgp_crc_word *words;
+
+	ret = sgp_read_from_cmd(data, SGP_CMD_GET_SERIAL_ID, 3,
+				SGP_CMD_DURATION_US);
+	if (ret != 0)
+		return ret;
+
+	words = data->buffer.raw_words;
+
+	data->serial_id =
+		(u64)(be16_to_cpu(words[2].value) & 0xffff)       |
+		(u64)(be16_to_cpu(words[1].value) & 0xffff) << 16 |
+		(u64)(be16_to_cpu(words[0].value) & 0xffff) << 32;
+
+	return ret;
+}
+
 static int setup_and_check_sgp_data(struct sgp_data *data,
 				    unsigned int chip_id)
 {
@@ -649,6 +693,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->chip_id = SGP30;
 		data->baseline_len = 2;
 		data->baseline_format = "%08x\n";
+		data->measure_mode = SGP_MEASURE_MODE_UNKNOWN;
 		break;
 	case SGPC3:
 		supported_versions =
@@ -656,36 +701,37 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		num_fs = ARRAY_SIZE(supported_versions_sgpc3);
 		data->measurement_len = SGPC3_MEASUREMENT_LEN;
 		data->measure_interval_hz = SGPC3_MEASURE_INTERVAL_HZ;
-		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
-		data->measure_signal_cmd = SGPC3_CMD_MEASURE_SIGNAL;
+		data->measure_iaq_cmd = SGPC3_CMD_MEASURE_RAW;
+		data->measure_signal_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->chip_id = SGPC3;
 		data->baseline_len = 1;
 		data->baseline_format = "%04x\n";
+		data->measure_mode = SGP_MEASURE_MODE_ALL;
 		break;
 	default:
 		return -ENODEV;
 	};
 
 	for (ix = 0; ix < num_fs; ix++) {
-		if (major == 0 && supported_versions[ix].major == major &&
-		    supported_versions[ix].minor == minor)
-			return 0;
-		else if (major > 0 && supported_versions[ix].major == major &&
-			 minor >= supported_versions[ix].minor)
+		if (supported_versions[ix].major == major &&
+		    minor >= supported_versions[ix].minor)
 			return 0;
 	}
-
-	data->measure_mode = SGP_MEASURE_MODE_UNKNOWN;
 
 	return -ENODEV;
 }
 
+static IIO_DEVICE_ATTR(in_serial_id, 0444, sgp_serial_id_show, NULL, 0);
+static IIO_DEVICE_ATTR(in_featureset_version, 0444, sgp_featureset_version_show,
+		       NULL, 0);
 static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
 static IIO_DEVICE_ATTR(out_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
 static IIO_DEVICE_ATTR(in_iaq_baseline, 0444, sgp_iaq_baseline_show, NULL, 0);
 static IIO_DEVICE_ATTR(out_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
 
 static struct attribute *sgp_attributes[] = {
+	&iio_dev_attr_in_serial_id.dev_attr.attr,
+	&iio_dev_attr_in_featureset_version.dev_attr.attr,
 	&iio_dev_attr_in_selftest.dev_attr.attr,
 	&iio_dev_attr_out_iaq_init.dev_attr.attr,
 	&iio_dev_attr_in_iaq_baseline.dev_attr.attr,
@@ -739,10 +785,18 @@ static int sgp_probe(struct i2c_client *client,
 	mutex_init(&data->data_lock);
 	mutex_init(&data->i2c_lock);
 
+	/* get serial id and write it to client data */
+	ret = sgp_get_serial_id(data);
+
+	if (ret != 0)
+		return ret;
+
+	/* get featureset version and write it to client data */
 	ret = sgp_read_from_cmd(data, SGP_CMD_GET_FEATURE_SET, 1,
 				SGP_CMD_DURATION_US);
 	if (ret != 0)
 		return ret;
+
 	data->feature_set = be16_to_cpu(data->buffer.raw_words[0].value);
 
 	ret = setup_and_check_sgp_data(data, chip_id);
@@ -783,8 +837,8 @@ static const struct i2c_device_id sgp_id[] = {
 	{ "sgpc3", SGPC3 },
 	{ }
 };
-MODULE_DEVICE_TABLE(i2c, sgp_id);
 
+MODULE_DEVICE_TABLE(i2c, sgp_id);
 MODULE_DEVICE_TABLE(of, sgp_dt_ids);
 
 static struct i2c_driver sgp_driver = {
