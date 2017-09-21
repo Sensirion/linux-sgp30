@@ -15,13 +15,17 @@ The driver is meant for direct use with sysfs or libiio
 Errors are printed to the kernel log (dmesg)
 
 === Loading ===
+Load the dependencies of the sgpxx.ko kernel module
+modprobe industrialio
+modprobe crc8
+
 Load the kernel module with insmod sgpxx.ko (out-of-tree build) or
 modprobe sgpxx
 
 === Instantiation ===
 Instantiate the driver on the correct i2c bus with
-echo sgpxx 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/new_device >/dev/null
-(sgpxx, sgp30 or sgpc3 are permissible names - which name does not matter)
+echo sgp30 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/new_device >/dev/null
+(sgp30 or sgpc3 are permissible names)
 
 === Operation ===
 Query device files by reading from the iio subsytem's device:
