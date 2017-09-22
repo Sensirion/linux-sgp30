@@ -631,7 +631,7 @@ static ssize_t sgp_serial_id_show(struct device *dev,
 	return sprintf(buf, "%llu\n", data->serial_id);
 }
 
-static ssize_t sgp_featureset_version_show(struct device *dev,
+static ssize_t sgp_feature_set_version_show(struct device *dev,
 					   struct device_attribute *attr,
 					   char *buf)
 {
@@ -721,7 +721,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 }
 
 static IIO_DEVICE_ATTR(in_serial_id, 0444, sgp_serial_id_show, NULL, 0);
-static IIO_DEVICE_ATTR(in_featureset_version, 0444, sgp_featureset_version_show,
+static IIO_DEVICE_ATTR(in_feature_set_version, 0444, sgp_feature_set_version_show,
 		       NULL, 0);
 static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
 static IIO_DEVICE_ATTR(out_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
@@ -730,7 +730,7 @@ static IIO_DEVICE_ATTR(out_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
 
 static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_serial_id.dev_attr.attr,
-	&iio_dev_attr_in_featureset_version.dev_attr.attr,
+	&iio_dev_attr_in_feature_set_version.dev_attr.attr,
 	&iio_dev_attr_in_selftest.dev_attr.attr,
 	&iio_dev_attr_out_iaq_init.dev_attr.attr,
 	&iio_dev_attr_in_iaq_baseline.dev_attr.attr,
@@ -790,7 +790,7 @@ static int sgp_probe(struct i2c_client *client,
 	if (ret != 0)
 		return ret;
 
-	/* get featureset version and write it to client data */
+	/* get feature set version and write it to client data */
 	ret = sgp_read_from_cmd(data, SGP_CMD_GET_FEATURE_SET, 1,
 				SGP_CMD_DURATION_US);
 	if (ret != 0)
