@@ -632,8 +632,8 @@ static ssize_t sgp_serial_id_show(struct device *dev,
 }
 
 static ssize_t sgp_feature_set_version_show(struct device *dev,
-					   struct device_attribute *attr,
-					   char *buf)
+					    struct device_attribute *attr,
+					    char *buf)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 
@@ -721,8 +721,8 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 }
 
 static IIO_DEVICE_ATTR(in_serial_id, 0444, sgp_serial_id_show, NULL, 0);
-static IIO_DEVICE_ATTR(in_feature_set_version, 0444, sgp_feature_set_version_show,
-		       NULL, 0);
+static IIO_DEVICE_ATTR(in_feature_set_version, 0444,
+		       sgp_feature_set_version_show, NULL, 0);
 static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
 static IIO_DEVICE_ATTR(out_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
 static IIO_DEVICE_ATTR(in_iaq_baseline, 0444, sgp_iaq_baseline_show, NULL, 0);
