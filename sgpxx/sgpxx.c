@@ -32,7 +32,7 @@
 #define SGP_CMD(cmd_word)		cpu_to_be16(cmd_word)
 #define SGP_CMD_DURATION_US		50000
 #define SGP_SELFTEST_DURATION_US	220000
-#define SGP_CMD_HANDLING_DURATION_US    10000
+#define SGP_CMD_HANDLING_DURATION_US	10000
 #define SGP_CMD_LEN			SGP_WORD_LEN
 #define SGP30_MEASUREMENT_LEN		2
 #define SGPC3_MEASUREMENT_LEN		2
@@ -42,7 +42,7 @@
 
 DECLARE_CRC8_TABLE(sgp_crc8_table);
 
-enum {
+enum sgp_product_id {
 	SGP30 = 0,
 	SGPC3
 };
@@ -52,7 +52,7 @@ enum sgp30_channel_idx {
 	SGP30_IAQ_CO2EQ_IDX,
 	SGP30_SIG_ETOH_IDX,
 	SGP30_SIG_H2_IDX,
-	SGP30_AH_IDX,
+	SGP30_SET_AH_IDX,
 };
 
 enum sgpc3_channel_idx {
@@ -69,9 +69,8 @@ enum sgp_cmd {
 	SGP_CMD_GET_SERIAL_ID		= SGP_CMD(0x3682),
 	SGP_CMD_MEASURE_TEST		= SGP_CMD(0x2032),
 
-	SGP30_CMD_SET_ABSOLUTE_HUMIDITY = SGP_CMD(0x2061),
 	SGP30_CMD_MEASURE_SIGNAL	= SGP_CMD(0x2050),
-	SGP30_CMD_ABSOLUTE_HUMIDITY	= SGP_CMD(0x2061),
+	SGP30_CMD_SET_ABSOLUTE_HUMIDITY = SGP_CMD(0x2061),
 
 	SGPC3_CMD_IAQ_INIT0		= SGP_CMD(0x2089),
 	SGPC3_CMD_IAQ_INIT16		= SGP_CMD(0x2024),
@@ -183,8 +182,8 @@ static const struct iio_chan_spec sgp30_channels[] = {
 	},
 	IIO_CHAN_SOFT_TIMESTAMP(2),
 	{
-		.type = IIO_CONCENTRATION,
-		.address = SGP30_AH_IDX,
+		.type = IIO_CONCENTRATION, /* IIO_HUMIDITYABSOLUTE */
+		.address = SGP30_SET_AH_IDX,
 		.extend_name = "ah",
 		.datasheet_name = "absolute humidty",
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
@@ -353,7 +352,7 @@ static int sgp_write_from_cmd(struct sgp_data *data,
 	}
 	ret = 0;
 	/* Wait inside lock to ensure the chip is ready before next command */
-	usleep_range(duration_us, duration_us + 500);
+	usleep_range(duration_us, duration_us + 1000);
 
 unlock_return_count:
 	mutex_unlock(&data->i2c_lock);
@@ -372,8 +371,8 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 		measure_mode = SGP_MEASURE_MODE_ALL;
 
 	/* Always measure if measure mode changed
-	 * SGP30 can only be polled once a second
-	 * SGPC3 can only be polled once every two seconds
+	 * SGP30 should only be polled once a second
+	 * SGPC3 should only be polled once every two seconds
 	 */
 	if (measure_mode == data->measure_mode &&
 	    !time_after(jiffies,
@@ -402,15 +401,15 @@ static int sgp_absolute_humidity_store(struct sgp_data *data,
 	if (val < 0 || val > 256 || (val == 256 && val2 > 0))
 		return -EINVAL;
 
-	/*  AH_scaled = (AH / 1000) * 256 */
 	ah = val * 1000 + val2 / 1000;
+	/* ah_scaled = (u16)((ah / 1000.0) * 256.0) */
 	ah_scaled = (u16)(((u64)ah * 256 * 16777) >> 24);
 
 	/* ensure we don't disable AH compensation due to rounding */
 	if (ah > 0 && ah_scaled == 0)
 		ah_scaled = 1;
 
-	return sgp_write_from_cmd(data, SGP30_CMD_ABSOLUTE_HUMIDITY,
+	return sgp_write_from_cmd(data, SGP30_CMD_SET_ABSOLUTE_HUMIDITY,
 				  &ah_scaled, 1, SGP_CMD_HANDLING_DURATION_US);
 }
 
@@ -494,7 +493,7 @@ static int sgp_write_raw(struct iio_dev *indio_dev,
 	int ret;
 
 	switch (chan->address) {
-	case SGP30_AH_IDX:
+	case SGP30_SET_AH_IDX:
 		ret = sgp_absolute_humidity_store(data, val, val2);
 		break;
 	default:
@@ -538,8 +537,7 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 		}
 	}
 
-	ret = sgp_read_from_cmd(data, cmd, 0,
-				SGP_CMD_DURATION_US);
+	ret = sgp_read_from_cmd(data, cmd, 0, SGP_CMD_DURATION_US);
 
 	if (ret < 0)
 		return ret;
@@ -565,7 +563,7 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
 	baseline = 0;
 	for (ix = 0; ix < data->baseline_len; ix++) {
 		baseline_word = be16_to_cpu(data->buffer.raw_words[ix].value);
-		baseline |=  baseline_word << (16 * ix);
+		baseline |= baseline_word << (16 * ix);
 	}
 
 	return sprintf(buf, data->baseline_format, baseline);
@@ -638,7 +636,7 @@ static ssize_t sgp_feature_set_version_show(struct device *dev,
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 
 	return sprintf(buf, "%hu.%hu\n", (data->feature_set & 0x00e0) >> 5,
-		       data->feature_set & 0X001f);
+		       data->feature_set & 0x001f);
 }
 
 static int sgp_get_serial_id(struct sgp_data *data)
@@ -653,21 +651,20 @@ static int sgp_get_serial_id(struct sgp_data *data)
 
 	words = data->buffer.raw_words;
 
-	data->serial_id =
-		(u64)(be16_to_cpu(words[2].value) & 0xffff)       |
-		(u64)(be16_to_cpu(words[1].value) & 0xffff) << 16 |
-		(u64)(be16_to_cpu(words[0].value) & 0xffff) << 32;
-
+	data->serial_id = (u64)(be16_to_cpu(words[2].value) & 0xffff)       |
+			  (u64)(be16_to_cpu(words[1].value) & 0xffff) << 16 |
+			  (u64)(be16_to_cpu(words[0].value) & 0xffff) << 32;
 	return ret;
 }
 
 static int setup_and_check_sgp_data(struct sgp_data *data,
 				    unsigned int chip_id)
 {
-	u16 minor, major, product, eng, ix, num_fs;
+	u16 minor, major, product, eng, ix, num_fs, reserved;
 	struct sgp_version *supported_versions;
 
 	product = (data->feature_set & 0xf000) >> 12;
+	reserved = (data->feature_set & 0x0e00) >> 9;
 	eng = (data->feature_set & 0x0100) >> 8;
 	major = (data->feature_set & 0x00e0) >> 5;
 	minor = data->feature_set & 0x001f;
@@ -675,6 +672,10 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	/* driver does not match product */
 	if (product != chip_id)
 		return -ENODEV;
+
+	if (reserved != 0)
+		dev_warn(&data->client->dev, "reserved bits set: %04hx\n",
+			 reserved);
 
 	/* engineering samples are not supported */
 	if (eng != 0)

@@ -35,10 +35,7 @@ modules: $(MODOBJ)
 	@$(MAKE) -C $(KERNELDIR) M=$(PWD) src=$(PWD)/$(MODNAME) ARCH=$(ARCH) CROSS_COMPILE="$(CROSS_COMPILE)" $@
 
 check:
-	$(KERNELDIR)/scripts/checkpatch.pl --no-tree -f $(MODSRC)
-
-deploy: $(KERNELDIR)/drivers/iio/chemical/$(MODSRC)
-	cp $(MODSRC) $(KERNELDIR)/drivers/iio/chemical/
+	$(KERNELDIR)/scripts/checkpatch.pl --no-tree -f $($(MODSRC))
 
 reload:
 	lsmod | grep $(MODNAME) && sudo rmmod $(MODNAME); sudo insmod $(MODNAME).ko
