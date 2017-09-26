@@ -228,57 +228,33 @@ static struct sgp_device sgp_devices[] = {
 };
 
 /**
- * sgp_i2c_read() - reads data from SGP sensor
+ * sgp_verify_buffer() - verify the checksums of the data buffer words
  *
- * Note that since this function uses data->buffer, data->data_lock must be held
- * by the caller throughout the duration of the call.
- *
- * @client:     I2C client device
- * @data:       SGP data
- * @word_count: Num words to read, excluding CRC bytes
+ * @data:       SGP data containing the raw buffer
+ * @word_count: Num data words stored in the buffer, excluding CRC bytes
  *
  * Return:      0 on success, negative error code otherwise
  */
-static int sgp_i2c_read(struct i2c_client *client,
-			struct sgp_data *data,
-			size_t word_count)
+static int sgp_verify_buffer(struct sgp_data *data, size_t word_count)
 {
-	int ret;
 	size_t size = word_count * (SGP_WORD_LEN + SGP_CRC8_LEN);
 	int i;
 	u8 crc;
 	u8 *data_buf = &data->buffer.start;
 
-	mutex_lock(&data->i2c_lock);
-	ret = i2c_master_recv(client, data_buf, size);
-	if (ret < 0) {
-		ret = -ETXTBSY;
-		goto fail_unlock;
-	}
-	if (ret != size) {
-		ret = -EINTR;
-		goto fail_unlock;
-	}
-	mutex_unlock(&data->i2c_lock);
-
 	for (i = 0; i < size; i += SGP_WORD_LEN + SGP_CRC8_LEN) {
 		crc = crc8(sgp_crc8_table, &data_buf[i], SGP_WORD_LEN,
 			   SGP_CRC8_INIT);
 		if (crc != data_buf[i + SGP_WORD_LEN]) {
-			dev_err(&client->dev, "CRC error\n");
+			dev_err(&data->client->dev, "CRC error\n");
 			return -EIO;
 		}
 	}
-
 	return 0;
-
-fail_unlock:
-	mutex_unlock(&data->i2c_lock);
-	return ret;
 }
 
 /**
- * sgp_i2c_read_from_cmd() - reads data from SGP sensor after issuing a command
+ * sgp_read_from_cmd() - reads data from SGP sensor after issuing a command
  * @data:       SGP data
  * @cmd:        SGP Command to issue
  * @word_count: Num words to read, excluding CRC bytes
@@ -292,6 +268,8 @@ static int sgp_read_from_cmd(struct sgp_data *data,
 {
 	int ret;
 	struct i2c_client *client = data->client;
+	size_t size = word_count * (SGP_WORD_LEN + SGP_CRC8_LEN);
+	u8 *data_buf = &data->buffer.start;
 
 	mutex_lock(&data->i2c_lock);
 	ret = i2c_master_send(client, (const char *)&cmd, SGP_CMD_LEN);
@@ -299,14 +277,24 @@ static int sgp_read_from_cmd(struct sgp_data *data,
 		mutex_unlock(&data->i2c_lock);
 		return -EIO;
 	}
-	/* Wait inside lock to ensure the chip is ready before next command */
 	usleep_range(duration_us, duration_us + 1000);
-	mutex_unlock(&data->i2c_lock);
 
 	mutex_lock(&data->data_lock);
-	ret = sgp_i2c_read(client, data, word_count);
-	mutex_unlock(&data->data_lock);
+	ret = i2c_master_recv(client, data_buf, size);
+	mutex_unlock(&data->i2c_lock);
+	if (ret < 0) {
+		ret = -ETXTBSY;
+		goto fail_unlock;
+	}
+	if (ret != size) {
+		ret = -EINTR;
+		goto fail_unlock;
+	}
 
+	ret = sgp_verify_buffer(data, word_count);
+
+fail_unlock:
+	mutex_unlock(&data->data_lock);
 	return ret;
 }
 
