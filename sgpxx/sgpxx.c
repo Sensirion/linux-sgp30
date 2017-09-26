@@ -107,17 +107,17 @@ struct sgp_data {
 	struct mutex i2c_lock; /* mutex to lock access to i2c */
 	unsigned long last_update;
 
-	union sgp_reading buffer;
+	u64 serial_id;
 	u16 chip_id;
 	u16 feature_set;
-	u64 serial_id;
 	u16 measurement_len;
 	int measure_interval_hz;
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_signal_cmd;
 	enum sgp_measure_mode measure_mode;
-	u8 baseline_len;
 	char *baseline_format;
+	u8 baseline_len;
+	union sgp_reading buffer;
 };
 
 struct sgp_device {
@@ -244,12 +244,11 @@ static int sgp_i2c_read(struct i2c_client *client,
 			size_t word_count)
 {
 	int ret;
-	int i, w;
-	size_t size;
+	size_t size = word_count * (SGP_WORD_LEN + SGP_CRC8_LEN);
+	int i;
 	u8 crc;
 	u8 *data_buf = &data->buffer.start;
 
-	size = word_count * (SGP_WORD_LEN + SGP_CRC8_LEN);
 	mutex_lock(&data->i2c_lock);
 	ret = i2c_master_recv(client, data_buf, size);
 	if (ret < 0) {
@@ -262,8 +261,7 @@ static int sgp_i2c_read(struct i2c_client *client,
 	}
 	mutex_unlock(&data->i2c_lock);
 
-	for (i = 0, w = 0; i < size;
-		i += SGP_WORD_LEN + SGP_CRC8_LEN, w += 1) {
+	for (i = 0; i < size; i += SGP_WORD_LEN + SGP_CRC8_LEN) {
 		crc = crc8(sgp_crc8_table, &data_buf[i], SGP_WORD_LEN,
 			   SGP_CRC8_INIT);
 		if (crc != data_buf[i + SGP_WORD_LEN]) {
@@ -316,8 +314,8 @@ static int sgp_read_from_cmd(struct sgp_data *data,
  * sgp_i2c_write_from_cmd() - write data to SGP sensor with a command
  * @data:       SGP data
  * @cmd:        SGP Command to issue
- * @buf:	Data to write
- * @buf_size:	Data size of the buffer
+ * @buf:        Data to write
+ * @buf_size:   Data size of the buffer
  *
  * Return:      0 on success, negative error otherwise.
  */
@@ -337,7 +335,7 @@ static int sgp_write_from_cmd(struct sgp_data *data,
 	*((u16 *)&buffer[0]) = cmd;
 	buf_idx += SGP_CMD_LEN;
 	for (ix = 0; ix < buf_size; ix++) {
-		*((u16 *)&buffer[buf_idx]) = ntohs(buf[ix] & 0xFFFF);
+		*((u16 *)&buffer[buf_idx]) = ntohs(buf[ix] & 0xffff);
 		buf_idx += SGP_WORD_LEN;
 		buffer[buf_idx] = crc8(sgp_crc8_table,
 				       &buffer[buf_idx - SGP_WORD_LEN],
@@ -578,7 +576,7 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	u16 words[2];
 	int ret = 0;
 
-	/* 1 word (4 bytes) per signal */
+	/* 1 word (4 chars) per signal */
 	if (count - newline == (data->baseline_len * 4)) {
 		if (data->baseline_len == 1)
 			ret = sscanf(buf, "%04hx", &words[0]);
