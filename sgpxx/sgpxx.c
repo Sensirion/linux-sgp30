@@ -116,6 +116,7 @@ struct sgp_data {
 	enum sgp_cmd measure_signal_cmd;
 	enum sgp_measure_mode measure_mode;
 	char *baseline_format;
+	bool iaq_initialized;
 	u8 baseline_len;
 	union sgp_reading buffer;
 };
@@ -409,6 +410,11 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 
 	switch (mask) {
 	case IIO_CHAN_INFO_PROCESSED:
+		if (!data->iaq_initialized) {
+			dev_warn(&data->client->dev,
+				 "IAQ potentially uninitialized\n");
+		}
+
 		ret = sgp_get_measurement(data, data->measure_iaq_cmd,
 					  SGP_MEASURE_MODE_IAQ);
 		if (ret)
@@ -528,6 +534,7 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 
+	data->iaq_initialized = true;
 	return count;
 }
 
@@ -595,6 +602,7 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	u16 measure_test;
 	int ret;
 
+	data->iaq_initialized = false;
 	ret = sgp_read_from_cmd(data, SGP_CMD_MEASURE_TEST, 1,
 				SGP_SELFTEST_DURATION_US);
 
@@ -789,6 +797,7 @@ static int sgp_probe(struct i2c_client *client,
 	if (ret < 0)
 		goto fail_free;
 
+	data->iaq_initialized = false;
 	/* so initial reading will complete */
 	data->last_update = jiffies - data->measure_interval_hz * HZ;
 
