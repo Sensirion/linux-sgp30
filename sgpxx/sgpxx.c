@@ -675,6 +675,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	if (eng != 0)
 		return -ENODEV;
 
+	data->iaq_initialized = false;
 	switch (product) {
 	case SGP30:
 		supported_versions =
@@ -797,7 +798,6 @@ static int sgp_probe(struct i2c_client *client,
 	if (ret < 0)
 		goto fail_free;
 
-	data->iaq_initialized = false;
 	/* so initial reading will complete */
 	data->last_update = jiffies - data->measure_interval_hz * HZ;
 
