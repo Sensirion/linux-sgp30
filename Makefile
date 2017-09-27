@@ -6,6 +6,9 @@ export CONFIG_IIO_SENSIRION_SGP="m"
 
 MODNAME = sgpxx
 CONFIG_CRC8 ?= $(CONFIG_IIO_SENSIRION_SGP)
+CONFIG_IIO ?= $(CONFIG_IIO_SENSIRION_SGP)
+CONFIG_IIO_BUFFER ?= "y"
+CONFIG_IIO_TRIGGERED_BUFFER ?= $(CONFIG_IIO_SENSIRION_SGP)
 
 MODSRC = $(MODNAME)_src
 MODOBJ = $(MODNAME)_obj
@@ -22,6 +25,9 @@ sensirion-sgp/Makefile:
 prepare:
 	cd $(KERNELDIR) && \
 	echo "CONFIG_CRC8=$(CONFIG_CRC8)" >> .config && \
+	echo "CONFIG_IIO=$(CONFIG_IIO)" >> .config && \
+	echo "CONFIG_IIO_BUFFER=$(CONFIG_IIO_BUFFER)" >> .config && \
+	echo "CONFIG_IIO_TRIGGERED_BUFFER=$(CONFIG_IIO_TRIGGERED_BUFFER)" >> .config && \
 	make modules_prepare; \
 	cd -
 

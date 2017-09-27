@@ -23,6 +23,9 @@
 #include <linux/i2c.h>
 #include <linux/of_device.h>
 #include <linux/iio/iio.h>
+#include <linux/iio/buffer.h>
+#include <linux/iio/trigger_consumer.h>
+#include <linux/iio/triggered_buffer.h>
 #include <linux/iio/sysfs.h>
 
 #define SGP_WORD_LEN			2
@@ -145,6 +148,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.type = IIO_CONCENTRATION,
 		.channel2 = IIO_MOD_VOC,
 		.datasheet_name = "TVOC signal",
+		.scan_index = 0,
 		.modified = 1,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
 		.address = SGP30_IAQ_TVOC_IDX,
@@ -153,6 +157,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.type = IIO_CONCENTRATION,
 		.channel2 = IIO_MOD_CO2,
 		.datasheet_name = "CO2eq signal",
+		.scan_index = 1,
 		.modified = 1,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
 		.address = SGP30_IAQ_CO2EQ_IDX,
@@ -164,7 +169,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.address = SGP30_SIG_ETOH_IDX,
 		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
-		.scan_index = 0,
+		.scan_index = 2,
 		.scan_type = {
 			.endianness = IIO_BE,
 		},
@@ -176,12 +181,12 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.address = SGP30_SIG_H2_IDX,
 		.extend_name = "h2",
 		.datasheet_name = "H2 signal",
-		.scan_index = 1,
+		.scan_index = 3,
 		.scan_type = {
 			.endianness = IIO_BE,
 		},
 	},
-	IIO_CHAN_SOFT_TIMESTAMP(2),
+	IIO_CHAN_SOFT_TIMESTAMP(4),
 	{
 		.type = IIO_CONCENTRATION, /* IIO_HUMIDITYABSOLUTE */
 		.address = SGP30_SET_AH_IDX,
@@ -189,7 +194,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.datasheet_name = "absolute humidty",
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
 		.output = 1,
-		.scan_index = 3
+		.scan_index = 5
 	},
 };
 
@@ -780,6 +785,24 @@ static const struct of_device_id sgp_dt_ids[] = {
 	{ }
 };
 
+static irqreturn_t sgp_trigger_handler(int irq, void *p)
+{
+	struct iio_poll_func *pf = p;
+	struct iio_dev *indio_dev = pf->indio_dev;
+	struct sgp_data *data = iio_priv(indio_dev);
+	int ret;
+
+	ret = sgp_get_measurement(data, data->measure_iaq_cmd,
+				  SGP_MEASURE_MODE_IAQ);
+	if (!ret)
+		iio_push_to_buffers_with_timestamp(indio_dev,
+						   &data->buffer.start,
+						   pf->timestamp);
+
+	iio_trigger_notify_done(indio_dev->trig);
+	return IRQ_HANDLED;
+}
+
 static int sgp_probe(struct i2c_client *client,
 		     const struct i2c_device_id *id)
 {
@@ -833,12 +856,25 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->dev.parent = &client->dev;
 	indio_dev->info = &sgp_info;
 	indio_dev->name = dev_name(&client->dev);
-	indio_dev->modes = INDIO_DIRECT_MODE;
+	indio_dev->modes = INDIO_BUFFER_SOFTWARE | INDIO_DIRECT_MODE;
 
 	indio_dev->channels = chip->channels;
 	indio_dev->num_channels = chip->num_channels;
 
-	return devm_iio_device_register(&client->dev, indio_dev);
+	ret = devm_iio_triggered_buffer_setup(&client->dev, indio_dev,
+					      iio_pollfunc_store_time,
+					      sgp_trigger_handler,
+					      NULL);
+	if (ret) {
+		dev_err(&client->dev, "failed to setup iio triggered buffer\n");
+		goto fail_free;
+	}
+
+	ret = devm_iio_device_register(&client->dev, indio_dev);
+	if (!ret)
+		return ret;
+
+	dev_err(&client->dev, "failed to register iio device\n");
 
 fail_free:
 	mutex_destroy(&data->i2c_lock);
@@ -852,7 +888,6 @@ static int sgp_remove(struct i2c_client *client)
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 
 	devm_iio_device_unregister(&client->dev, indio_dev);
-
 	return 0;
 }
 
@@ -880,4 +915,4 @@ MODULE_AUTHOR("Andreas Brauchli <andreas.brauchli@sensirion.com>");
 MODULE_AUTHOR("Pascal Sachs <pascal.sachs@sensirion.com>");
 MODULE_DESCRIPTION("Sensirion SGPxx gas sensors");
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("0.4.0");
+MODULE_VERSION("0.5.0");
