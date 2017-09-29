@@ -851,4 +851,4 @@ MODULE_AUTHOR("Andreas Brauchli <andreas.brauchli@sensirion.com>");
 MODULE_AUTHOR("Pascal Sachs <pascal.sachs@sensirion.com>");
 MODULE_DESCRIPTION("Sensirion SGPxx gas sensors");
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("0.3.0");
+MODULE_VERSION("0.4.0");
