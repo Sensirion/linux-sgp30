@@ -256,11 +256,12 @@ static int sgp_verify_buffer(struct sgp_data *data, size_t word_count)
 
 /**
  * sgp_read_from_cmd() - reads data from SGP sensor after issuing a command
- * @data:       SGP data
- * @cmd:        SGP Command to issue
- * @word_count: Num words to read, excluding CRC bytes
+ * The caller must hold data->data_lock for the duration of the call.
+ * @data:        SGP data
+ * @cmd:         SGP Command to issue
+ * @word_count:  Num words to read, excluding CRC bytes
  *
- * Return:      0 on success, negative error otherwise.
+ * Return:       0 on success, negative error otherwise.
  */
 static int sgp_read_from_cmd(struct sgp_data *data,
 			     enum sgp_cmd cmd,
@@ -280,22 +281,16 @@ static int sgp_read_from_cmd(struct sgp_data *data,
 	}
 	usleep_range(duration_us, duration_us + 1000);
 
-	mutex_lock(&data->data_lock);
 	ret = i2c_master_recv(client, data_buf, size);
 	mutex_unlock(&data->i2c_lock);
-	if (ret < 0) {
+
+	if (ret < 0)
 		ret = -ETXTBSY;
-		goto fail_unlock;
-	}
-	if (ret != size) {
+	else if (ret != size)
 		ret = -EINTR;
-		goto fail_unlock;
-	}
+	else
+		ret = sgp_verify_buffer(data, word_count);
 
-	ret = sgp_verify_buffer(data, word_count);
-
-fail_unlock:
-	mutex_unlock(&data->data_lock);
 	return ret;
 }
 
@@ -346,6 +341,15 @@ unlock_return_count:
 	return ret;
 }
 
+/**
+ * sgp_get_measurement() - retrieve measurement result from sensor
+ * The caller must hold data->data_lock for the duration of the call.
+ * @data:           SGP data
+ * @cmd:            SGP Command to issue
+ * @measure_mode:   SGP measurement mode
+ *
+ * Return:      0 on success, negative error otherwise.
+ */
 static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 			       enum sgp_measure_mode measure_mode)
 {
@@ -410,6 +414,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 
 	switch (mask) {
 	case IIO_CHAN_INFO_PROCESSED:
+		mutex_lock(&data->data_lock);
 		if (!data->iaq_initialized) {
 			dev_warn(&data->client->dev,
 				 "IAQ potentially uninitialized\n");
@@ -436,8 +441,10 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			ret = -EINVAL;
 			break;
 		}
+		mutex_unlock(&data->data_lock);
 		break;
 	case IIO_CHAN_INFO_RAW:
+		mutex_lock(&data->data_lock);
 		ret = sgp_get_measurement(data, data->measure_signal_cmd,
 					  SGP_MEASURE_MODE_SIGNAL);
 		if (ret)
@@ -454,6 +461,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			ret = IIO_VAL_INT;
 			break;
 		}
+		mutex_unlock(&data->data_lock);
 		break;
 	case IIO_CHAN_INFO_SCALE:
 		switch (chan->address) {
@@ -529,13 +537,19 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 		}
 	}
 
+	mutex_lock(&data->data_lock);
 	ret = sgp_read_from_cmd(data, cmd, 0, SGP_CMD_DURATION_US);
 
 	if (ret < 0)
-		return ret;
+		goto unlock_fail;
 
 	data->iaq_initialized = true;
+	mutex_unlock(&data->data_lock);
 	return count;
+
+unlock_fail:
+	mutex_unlock(&data->data_lock);
+	return ret;
 }
 
 static ssize_t sgp_iaq_baseline_show(struct device *dev,
@@ -547,11 +561,12 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
 	u16 baseline_word;
 	int ret, ix;
 
+	mutex_lock(&data->data_lock);
 	ret = sgp_read_from_cmd(data, SGP_CMD_GET_BASELINE, data->baseline_len,
 				SGP_CMD_DURATION_US);
 
 	if (ret < 0)
-		return ret;
+		goto unlock_fail;
 
 	baseline = 0;
 	for (ix = 0; ix < data->baseline_len; ix++) {
@@ -559,7 +574,12 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
 		baseline |= baseline_word << (16 * ix);
 	}
 
+	mutex_unlock(&data->data_lock);
 	return sprintf(buf, data->baseline_format, baseline);
+
+unlock_fail:
+	mutex_unlock(&data->data_lock);
+	return ret;
 }
 
 static ssize_t sgp_iaq_baseline_store(struct device *dev,
@@ -602,17 +622,23 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	u16 measure_test;
 	int ret;
 
+	mutex_lock(&data->data_lock);
 	data->iaq_initialized = false;
 	ret = sgp_read_from_cmd(data, SGP_CMD_MEASURE_TEST, 1,
 				SGP_SELFTEST_DURATION_US);
 
-	if (ret < 0)
-		return ret;
+	if (ret != 0)
+		goto unlock_fail;
 
 	measure_test = be16_to_cpu(data->buffer.raw_words[0].value);
+	mutex_unlock(&data->data_lock);
 
 	return sprintf(buf, "%s\n",
 		       measure_test ^ SGP_SELFTEST_OK ? "FAILED" : "OK");
+
+unlock_fail:
+	mutex_unlock(&data->data_lock);
+	return ret;
 }
 
 static ssize_t sgp_serial_id_show(struct device *dev,
@@ -638,16 +664,19 @@ static int sgp_get_serial_id(struct sgp_data *data)
 	int ret;
 	struct sgp_crc_word *words;
 
+	mutex_lock(&data->data_lock);
 	ret = sgp_read_from_cmd(data, SGP_CMD_GET_SERIAL_ID, 3,
 				SGP_CMD_DURATION_US);
 	if (ret != 0)
-		return ret;
+		goto unlock_fail;
 
 	words = data->buffer.raw_words;
-
 	data->serial_id = (u64)(be16_to_cpu(words[2].value) & 0xffff)       |
 			  (u64)(be16_to_cpu(words[1].value) & 0xffff) << 16 |
 			  (u64)(be16_to_cpu(words[0].value) & 0xffff) << 32;
+
+unlock_fail:
+	mutex_unlock(&data->data_lock);
 	return ret;
 }
 
