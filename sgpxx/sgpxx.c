@@ -861,10 +861,10 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->channels = chip->channels;
 	indio_dev->num_channels = chip->num_channels;
 
-	ret = devm_iio_triggered_buffer_setup(&client->dev, indio_dev,
-					      iio_pollfunc_store_time,
-					      sgp_trigger_handler,
-					      NULL);
+	ret = iio_triggered_buffer_setup(indio_dev,
+					 iio_pollfunc_store_time,
+					 sgp_trigger_handler,
+					 NULL);
 	if (ret) {
 		dev_err(&client->dev, "failed to setup iio triggered buffer\n");
 		goto fail_free;
@@ -887,6 +887,7 @@ static int sgp_remove(struct i2c_client *client)
 {
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 
+	iio_triggered_buffer_cleanup(indio_dev);
 	devm_iio_device_unregister(&client->dev, indio_dev);
 	return 0;
 }
