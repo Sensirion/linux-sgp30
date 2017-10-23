@@ -424,11 +424,10 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			dev_warn(&data->client->dev,
 				 "IAQ potentially uninitialized\n");
 		}
-
 		ret = sgp_get_measurement(data, data->measure_iaq_cmd,
 					  SGP_MEASURE_MODE_IAQ);
 		if (ret)
-			goto err_out;
+			goto unlock_fail;
 		words = data->buffer.raw_words;
 		switch (chan->address) {
 		case SGP30_IAQ_TVOC_IDX:
@@ -453,7 +452,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 		ret = sgp_get_measurement(data, data->measure_signal_cmd,
 					  SGP_MEASURE_MODE_SIGNAL);
 		if (ret)
-			goto err_out;
+			goto unlock_fail;
 		words = data->buffer.raw_words;
 		switch (chan->address) {
 		case SGP30_SIG_ETOH_IDX:
@@ -466,6 +465,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			ret = IIO_VAL_INT;
 			break;
 		}
+unlock_fail:
 		mutex_unlock(&data->data_lock);
 		break;
 	case IIO_CHAN_INFO_SCALE:
@@ -485,8 +485,6 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 	default:
 		ret = -EINVAL;
 	}
-
-err_out:
 	return ret;
 }
 
