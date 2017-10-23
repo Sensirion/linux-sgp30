@@ -15,12 +15,16 @@ The driver is meant for direct use with sysfs or libiio
 Errors are printed to the kernel log (dmesg)
 
 === Loading ===
-Load the dependencies of the sgpxx.ko kernel module
-modprobe industrialio
-modprobe crc8
+Load the dependencies of the sgpxx.ko kernel module:
+# modprobe industrialio
+# modprobe industrialio-triggered-buffer
+# modprobe crc8
+
+for kernel-triggered timed readings, also load the following module:
+# modprobe iio-trig-hrtimer
 
 Load the kernel module with insmod sgpxx.ko (out-of-tree build) or
-modprobe sgpxx
+# modprobe sgpxx
 
 === Instantiation ===
 Instantiate the driver on the correct i2c bus with
@@ -32,9 +36,34 @@ Query device files by reading from the iio subsytem's device:
 $ cat /sys/bus/iio/devices/iio\:device0/in_selftest
 OK
 
-..or alternatively by the i2c bus: /sys/bus/i2c/devices/1-0058/iio\:device0/
+..or alternatively by the i2c bus: /sys/bus/i2c/devices/1-0058/iio:device0/
+
+==== Automatic Polling ====
+iio_readdev -t sgp-timer -b 256 iio:device0
+
+Manual Procedure for reference without iio-utils:
+Variables for easier reading:
+# sgp_path=/sys/bus/i2c/devices/1-0058/iio:device0
+# timer_name=sgp-timer
+# timer_path=/sys/bus/iio/triggers/hrtimer/$timer_name
+
+- Enable files to read out
+# echo 1 > $sgp_path/scan_attributes/in_timestamp_en
+# echo 1 > $sgp_path/scan_attributes/in_concentration_voc_en
+- Create a new hrtimer trigger
+# mkdir $timer_path
+- Set the sampling frequency to 1Hz (SGP30), 0.5Hz (SGPC3)
+echo 1 > $timer_path/sampling_frequency
+- Link the created trigger with the sgp driver
+echo $timer_name > $sgp_path/trigger/current_trigger
+- Set the buffer size
+# echo 256 > $sgp_path/buffer/length
+- Enable the buffer
+# echo 1 > $sgp_path/buffer/enable
+- Read out one buffer record from the buffer
+# cat /dev/iio:device0
 
 === Unloading ===
-echo 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/delete_device >/dev/null
-rmmod sgpxx
+# echo 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/delete_device >/dev/null
+# rmmod sgpxx
 
