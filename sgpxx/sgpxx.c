@@ -696,8 +696,12 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	minor = data->feature_set & 0x001f;
 
 	/* driver does not match product */
-	if (product != chip_id)
+	if (product != chip_id) {
+		dev_err(&data->client->dev,
+			"sensor reports a different product: 0x%04hx\n",
+			product);
 		return -ENODEV;
+	}
 
 	if (reserved != 0)
 		dev_warn(&data->client->dev, "reserved bits set: %04hx\n",
