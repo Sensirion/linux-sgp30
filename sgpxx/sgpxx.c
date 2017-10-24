@@ -704,7 +704,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	}
 
 	if (reserved != 0)
-		dev_warn(&data->client->dev, "reserved bits set: %04hx\n",
+		dev_warn(&data->client->dev, "reserved bits set: 0x%04hx\n",
 			 reserved);
 
 	/* engineering samples are not supported */
