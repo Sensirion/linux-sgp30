@@ -749,6 +749,8 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 			return 0;
 	}
 
+	dev_err(&data->client->dev, "unsupported sgp version: %d.%d\n",
+		major, minor);
 	return -ENODEV;
 }
 
@@ -822,7 +824,6 @@ static int sgp_probe(struct i2c_client *client,
 	of_id = of_match_device(sgp_dt_ids, &client->dev);
 	if (!of_id)
 		chip_id = id->driver_data;
-
 	else
 		chip_id = (unsigned long)of_id->data;
 
