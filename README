@@ -17,28 +17,40 @@ Errors are printed to the kernel log (dmesg)
 === Loading ===
 Load the dependencies of the sgpxx.ko kernel module:
 # modprobe industrialio
-# modprobe industrialio-triggered-buffer
 # modprobe crc8
 
-for kernel-triggered timed readings, also load the following module:
+Only when compiled with CONFIG_IIO_TRIGGERED_BUFFER:
+# modprobe industrialio-triggered-buffer
+
+For kernel-triggered timed readings, also load the following modules:
 # modprobe iio-trig-hrtimer
 
-Load the kernel module with insmod sgpxx.ko (out-of-tree build) or
+Load the kernel module with the appropriate command:
+* Out-of-tree build
+# insmod sgpxx.ko
+
+* In-kernel build
 # modprobe sgpxx
 
 === Instantiation ===
 Instantiate the driver on the correct i2c bus with
-echo sgp30 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/new_device >/dev/null
-(sgp30 or sgpc3 are permissible names)
+# echo sgp30 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/new_device >/dev/null
+
+Only `sgp30' and `sgpc3' are permissible names. Use of the name of the wrong
+chip will result in an error during probing.
 
 === Operation ===
 Query device files by reading from the iio subsytem's device:
 $ cat /sys/bus/iio/devices/iio\:device0/in_selftest
 OK
 
-..or alternatively by the i2c bus: /sys/bus/i2c/devices/1-0058/iio:device0/
+or alternatively by the i2c bus: /sys/bus/i2c/devices/1-0058/iio:device0/
 
 ==== Automatic Polling ====
+Automatic polling requires CONFIG_IIO_TRIGGERED_BUFFER to be enabled and the
+module to be loaded:
+# modprobe industrialio-triggered-buffer
+
 iio_readdev -t sgp-timer -b 256 iio:device0
 
 Manual Procedure for reference without iio-utils:
