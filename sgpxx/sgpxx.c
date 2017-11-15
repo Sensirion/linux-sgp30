@@ -168,7 +168,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.address = SGP30_IAQ_CO2EQ_IDX,
 	},
 	{
-		.type = IIO_CONCENTRATION, /* IIO_CONCENTRATION_RATIO */
+		.type = IIO_CONCENTRATION,
 		.info_mask_separate =
 			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
 		.address = SGP30_SIG_ETOH_IDX,
@@ -180,7 +180,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		},
 	},
 	{
-		.type = IIO_CONCENTRATION, /* IIO_CONCENTRATION_RATIO */
+		.type = IIO_CONCENTRATION,
 		.info_mask_separate =
 			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
 		.address = SGP30_SIG_H2_IDX,
@@ -193,7 +193,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 	},
 	IIO_CHAN_SOFT_TIMESTAMP(4),
 	{
-		.type = IIO_CONCENTRATION, /* IIO_HUMIDITYABSOLUTE */
+		.type = IIO_CONCENTRATION,
 		.address = SGP30_SET_AH_IDX,
 		.extend_name = "ah",
 		.datasheet_name = "absolute humidty",
@@ -213,7 +213,7 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 		.address = SGPC3_IAQ_TVOC_IDX,
 	},
 	{
-		.type = IIO_CONCENTRATION, /* IIO_CONCENTRATION_RATIO */
+		.type = IIO_CONCENTRATION,
 		.info_mask_separate =
 			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
 		.address = SGPC3_SIG_ETOH_IDX,
