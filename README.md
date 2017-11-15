@@ -25,6 +25,19 @@ With support for triggered buffers:
 /sgpxx: The sgpxx directory contains the driver source and Kconfig as needed
         for upstream merging with the Linux sources.
 
+## Building
+
+```bash
+# Install dependencies
+sudo apt install build-essential linux-headers-$(uname -r)
+# configure
+export KERNELDIR=/lib/modules/$(uname -r)/build
+# build
+make -j
+# check
+make check
+```
+
 ## Usage
 The driver is meant for direct use with sysfs or libiio.
 Errors are printed to the kernel log (dmesg)
