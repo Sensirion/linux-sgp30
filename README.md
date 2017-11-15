@@ -5,7 +5,7 @@ subsystem
 
 ## Requirements
 Kernel with the following config options set, either as module or compiled in.
-The config options must be listed in .config (e.g. selected with
+The config options must be listed in `.config` (e.g. selected with
 `make menuconfig`)
 
 Minimal driver requirements:
