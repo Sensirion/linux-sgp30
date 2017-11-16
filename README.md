@@ -46,6 +46,17 @@ To check for style issues we can use the `check` target
 make check
 ```
 
+### Cross Compiling
+
+To cross compile, one needs to install a cross compilation tool chain and set
+the `ARCH` and `CROSS_COMPILE` environment variables accordingly:
+
+```bash
+# Example to cross compile for raspbian
+export ARCH=arm
+export CROSS_COMPILE=~/opt/toolchain/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin/arm-linux-gnueabihf-
+```
+
 ## Usage
 The driver is meant for direct use with sysfs or libiio.
 Errors are printed to the kernel log (dmesg)
