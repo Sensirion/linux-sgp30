@@ -27,6 +27,11 @@ With support for triggered buffers:
 
 ## Building
 
+### Local Machine
+
+Compiling for your local machine is useful to test if the driver compiles
+correctly. For that we need the kernel headers and build tools.
+
 ```bash
 # Install dependencies
 sudo apt install build-essential linux-headers-$(uname -r)
@@ -34,7 +39,10 @@ sudo apt install build-essential linux-headers-$(uname -r)
 export KERNELDIR=/lib/modules/$(uname -r)/build
 # build
 make -j
-# check
+```
+To check for style issues we can use the `check` target
+
+```bash
 make check
 ```
 
