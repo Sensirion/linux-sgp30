@@ -1,0 +1,112 @@
+sgpxx: Industrial IO driver for Sensirion I2C Multi-Pixel Gas Sensors
+
+1. Overview
+
+The sgpxx driver supports the Sensirion SGP30 and SGPC3 multi-pixel gas sensors.
+
+Datasheets:
+https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGP30_Datasheet_EN.pdf
+https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGPC3_Datasheet_EN.pdf
+
+2. Modes of Operation
+
+2.1. Driver Instantiation
+
+The sgpxx driver must be instantiated on the corresponding i2c bus with the
+product name (sgp30 or sgpc3) and i2c address (0x58).
+
+Example instantiation of an sgp30 on i2c bus 1 (i2c-1):
+
+    $ echo sgp30 0x58 | sudo tee /sys/bus/i2c/devices/i2c-1/new_device
+
+Using the wrong product name results in an instantiation error. Check dmesg.
+
+2.2. Indoor Air Quality (IAQ) concentrations
+
+* tVOC (in_concentration_voc_input) at ppb precision (1e-9)
+* CO2eq (in_concentration_co2_input) at ppm precision (1e-6) -- SGP30 only
+
+2.2.1. IAQ Initialization
+Before Indoor Air Quality (IAQ) values can be read, the IAQ mode must be
+initialized by writing a non-empty value to out_iaq_init:
+
+    $ echo init > out_iaq_init
+
+After initializing IAQ, at least one IAQ signal must be read out every second
+(SGP30) / every two seconds (SGPC3) for the sensor to correctly maintain its
+internal baseline:
+
+    SGP30:
+    $ watch -n1 cat in_concentration_voc_input
+
+    SGPC3:
+    $ watch -n2 cat in_concentration_voc_input
+
+For the first 15s of operation after writing to out_iaq_init, default values are
+returned by the sensor.
+
+2.2.2. Pausing and Resuming IAQ
+
+For best performance and faster startup times, the baseline should be saved
+once every hour, after 12h of operation. The baseline is restored by writing a
+non-empty value to out_iaq_init, followed by writing an unmodified retrieved
+baseline value from in_iaq_baseline to out_iaq_baseline.
+
+    Saving the baseline:
+    $ baseline=$(cat in_iaq_baseline)
+
+    Restoring the baseline:
+    $ echo init > out_iaq_init
+    $ echo -n $baseline > out_iaq_baseline
+
+2.3. Gas Concentration Signals
+
+* Ethanol (in_concentration_ethanol_raw)
+* H2 (in_concentration_h2_raw) -- SGP30 only
+
+The gas signals in_concentration_ethanol_raw and in_concentration_h2_raw may be
+used without prior write to out_iaq_init.
+
+2.4. Humidity Compensation (SGP30)
+
+The SGP30 features an on-chip humidity compensation that requires the
+(in-device) environment's absolute humidity.
+
+Set the absolute humidity by writing the absolute humidity concentration (in
+mg/m^3) to out_concentration_ah_raw. The absolute humidity is obtained by
+converting the relative humidity and temperature. The following units are used:
+AH in mg/m^3, RH in percent (0..100), T in degrees Celsius, and exp() being the
+base-e exponential function.
+
+                  RH            exp(17.62 * T)
+                ----- * 6.112 * --------------
+                100.0            243.12 + T
+  AH = 216.7 * ------------------------------- * 1000
+                        273.15 + T
+
+Writing a value of 0 to out_absolute_humidity disables the humidity
+compensation.
+
+2.5. On-chip self test
+
+    $ cat in_selftest
+
+in_selftest returns OK or FAILED.
+
+The self test interferes with IAQ operations. If needed, first save the current
+baseline, then restore it after the self test:
+
+    $ baseline=$(cat in_iaq_baseline)
+    $ cat in_selftest
+    $ echo init > out_iaq_init
+    $ echo -n $baseline > out_iaq_baseline
+
+If the sensor's current operating duration is less than 12h the baseline should
+not be restored by skipping the last step.
+
+3. Sensor Interface
+
+    $ cat in_feature_set_version
+
+The SGP sensors' minor interface (feature set) version guarantees interface
+stability: a sensor with feature set 1.1 works with a driver for feature set 1.0
