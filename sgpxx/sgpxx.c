@@ -27,10 +27,10 @@
 #include <linux/of_device.h>
 #include <linux/iio/iio.h>
 #include <linux/iio/buffer.h>
-#ifdef CONFIG_IIO_TRIGGERED_BUFFER
+#ifdef CONFIG_IIO_BUFFER
 #include <linux/iio/trigger_consumer.h>
 #include <linux/iio/triggered_buffer.h>
-#endif /* CONFIG_IIO_TRIGGERED_BUFFER */
+#endif /* CONFIG_IIO_BUFFER */
 #include <linux/iio/sysfs.h>
 #include <linux/version.h>
 
@@ -797,7 +797,7 @@ static const struct of_device_id sgp_dt_ids[] = {
 	{ }
 };
 
-#ifdef CONFIG_IIO_TRIGGERED_BUFFER
+#ifdef CONFIG_IIO_BUFFER
 static irqreturn_t sgp_trigger_handler(int irq, void *p)
 {
 	struct iio_poll_func *pf = p;
@@ -815,7 +815,7 @@ static irqreturn_t sgp_trigger_handler(int irq, void *p)
 	iio_trigger_notify_done(indio_dev->trig);
 	return IRQ_HANDLED;
 }
-#endif /* CONFIG_IIO_TRIGGERED_BUFFER */
+#endif /* CONFIG_IIO_BUFFER */
 
 static int sgp_probe(struct i2c_client *client,
 		     const struct i2c_device_id *id)
@@ -874,7 +874,7 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->channels = chip->channels;
 	indio_dev->num_channels = chip->num_channels;
 
-#ifdef CONFIG_IIO_TRIGGERED_BUFFER
+#ifdef CONFIG_IIO_BUFFER
 	ret = iio_triggered_buffer_setup(indio_dev,
 					 iio_pollfunc_store_time,
 					 sgp_trigger_handler,
@@ -883,7 +883,7 @@ static int sgp_probe(struct i2c_client *client,
 		dev_err(&client->dev, "failed to setup iio triggered buffer\n");
 		goto fail_free;
 	}
-#endif /* CONFIG_IIO_TRIGGERED_BUFFER */
+#endif /* CONFIG_IIO_BUFFER */
 
 	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (!ret)
@@ -902,9 +902,9 @@ static int sgp_remove(struct i2c_client *client)
 {
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 
-#ifdef CONFIG_IIO_TRIGGERED_BUFFER
+#ifdef CONFIG_IIO_BUFFER
 	iio_triggered_buffer_cleanup(indio_dev);
-#endif /* CONFIG_IIO_TRIGGERED_BUFFER */
+#endif /* CONFIG_IIO_BUFFER */
 	devm_iio_device_unregister(&client->dev, indio_dev);
 	return 0;
 }
