@@ -32,6 +32,7 @@
 #include <linux/iio/triggered_buffer.h>
 #endif /* CONFIG_IIO_TRIGGERED_BUFFER */
 #include <linux/iio/sysfs.h>
+#include <linux/version.h>
 
 #define SGP_WORD_LEN			2
 #define SGP_CRC8_POLYNOMIAL		0x31
@@ -783,7 +784,9 @@ static const struct attribute_group sgp_attr_group = {
 
 static const struct iio_info sgp_info = {
 	.attrs		= &sgp_attr_group,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
 	.driver_module	= THIS_MODULE,
+#endif /* LINUX_VERSION_CODE */
 	.read_raw	= sgp_read_raw,
 	.write_raw	= sgp_write_raw,
 };
