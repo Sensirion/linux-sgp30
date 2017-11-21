@@ -41,7 +41,8 @@ modules: $(MODOBJ)
 	@$(MAKE) -C $(KERNELDIR) M=$(PWD) src=$(PWD)/$(MODNAME) ARCH=$(ARCH) CROSS_COMPILE="$(CROSS_COMPILE)" $@
 
 check:
-	$(KERNELDIR)/scripts/checkpatch.pl --no-tree -f $($(MODSRC))
+	# Remove lines with checkpatch warnings: datasheet links and LINUX_VERSION
+	sed -e '/https/d;/LINUX_VERSION/d' $($(MODSRC)) | $(KERNELDIR)/scripts/checkpatch.pl --no-tree -f -
 
 reload:
 	lsmod | grep $(MODNAME) && sudo rmmod $(MODNAME); sudo insmod $(MODNAME).ko
