@@ -1,5 +1,5 @@
 /*
- * sgpxx.c - Support for Sensirion SGP Gas Sensors
+ * sgp30.c - Support for Sensirion SGP Gas Sensors
  *
  * Copyright (C) 2017 Andreas Brauchli <andreas.brauchli@sensirion.com>
  *
@@ -920,7 +920,7 @@ MODULE_DEVICE_TABLE(of, sgp_dt_ids);
 
 static struct i2c_driver sgp_driver = {
 	.driver = {
-		.name	= "sgpxx",
+		.name	= "sgp30",
 		.of_match_table = of_match_ptr(sgp_dt_ids),
 	},
 	.probe = sgp_probe,
@@ -931,6 +931,6 @@ module_i2c_driver(sgp_driver);
 
 MODULE_AUTHOR("Andreas Brauchli <andreas.brauchli@sensirion.com>");
 MODULE_AUTHOR("Pascal Sachs <pascal.sachs@sensirion.com>");
-MODULE_DESCRIPTION("Sensirion SGPxx gas sensors");
+MODULE_DESCRIPTION("Sensirion SGP gas sensors");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("0.5.0");

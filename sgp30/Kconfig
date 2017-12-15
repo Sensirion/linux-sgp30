@@ -1,7 +1,7 @@
 # Embed the config section into $KERNELDIR/drivers/iio/chemical/Kconfig
 
-config SENSIRION_SGPXX
-	tristate "Sensirion SGPxx gas sensors"
+config SENSIRION_SGP30
+	tristate "Sensirion SGP gas sensors"
 	depends on I2C
 	select CRC8
 	select IIO_TRIGGERED_BUFFER if (IIO_BUFFER)
@@ -14,4 +14,4 @@ config SENSIRION_SGPXX
 	  Also select IIO_BUFFER to enable triggered buffers.
 
 	  To compile this driver as module, choose M here: the
-	  module will be called sgpxx.
+	  module will be called sgp30.
