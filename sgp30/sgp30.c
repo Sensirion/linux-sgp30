@@ -20,6 +20,7 @@
 
 #include <linux/crc8.h>
 #include <linux/delay.h>
+#include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/init.h>
@@ -27,10 +28,6 @@
 #include <linux/of_device.h>
 #include <linux/iio/iio.h>
 #include <linux/iio/buffer.h>
-#ifdef CONFIG_IIO_BUFFER
-#include <linux/iio/trigger_consumer.h>
-#include <linux/iio/triggered_buffer.h>
-#endif /* CONFIG_IIO_BUFFER */
 #include <linux/iio/sysfs.h>
 #include <linux/version.h>
 
@@ -112,6 +109,7 @@ union sgp_reading {
 
 struct sgp_data {
 	struct i2c_client *client;
+	struct task_struct *iaq_thread;
 	struct mutex data_lock; /* mutex to lock access to data buffer */
 	struct mutex i2c_lock; /* mutex to lock access to i2c */
 	unsigned long last_update;
@@ -394,6 +392,24 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 	return 0;
 }
 
+static int sgp_iaq_threadfn(void *p)
+{
+	struct sgp_data *data = (struct sgp_data *)p;
+	long intv = data->measure_interval_hz * 1000000;
+	int ret;
+
+	while(!kthread_should_stop()) {
+		mutex_lock(&data->data_lock);
+		ret = sgp_get_measurement(data, data->measure_iaq_cmd,
+					  SGP_MEASURE_MODE_IAQ);
+		if (ret)
+			dev_warn(&data->client->dev, "measurement error [%d]\n", ret);
+		mutex_unlock(&data->data_lock);
+		usleep_range(intv - 500, intv + 500);
+	}
+	return 0;
+}
+
 static int sgp_absolute_humidity_store(struct sgp_data *data,
 				       int val, int val2)
 {
@@ -553,6 +569,10 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 		goto unlock_fail;
 
 	data->iaq_initialized = true;
+	if (!data->iaq_thread) {
+		data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
+					       "sgp-iaq");
+	}
 	mutex_unlock(&data->data_lock);
 	return count;
 
@@ -797,26 +817,6 @@ static const struct of_device_id sgp_dt_ids[] = {
 	{ }
 };
 
-#ifdef CONFIG_IIO_BUFFER
-static irqreturn_t sgp_trigger_handler(int irq, void *p)
-{
-	struct iio_poll_func *pf = p;
-	struct iio_dev *indio_dev = pf->indio_dev;
-	struct sgp_data *data = iio_priv(indio_dev);
-	int ret;
-
-	ret = sgp_get_measurement(data, data->measure_iaq_cmd,
-				  SGP_MEASURE_MODE_IAQ);
-	if (!ret)
-		iio_push_to_buffers_with_timestamp(indio_dev,
-						   &data->buffer.start,
-						   pf->timestamp);
-
-	iio_trigger_notify_done(indio_dev->trig);
-	return IRQ_HANDLED;
-}
-#endif /* CONFIG_IIO_BUFFER */
-
 static int sgp_probe(struct i2c_client *client,
 		     const struct i2c_device_id *id)
 {
@@ -869,21 +869,10 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->dev.parent = &client->dev;
 	indio_dev->info = &sgp_info;
 	indio_dev->name = dev_name(&client->dev);
-	indio_dev->modes = INDIO_BUFFER_SOFTWARE | INDIO_DIRECT_MODE;
+	indio_dev->modes = INDIO_DIRECT_MODE;
 
 	indio_dev->channels = chip->channels;
 	indio_dev->num_channels = chip->num_channels;
-
-#ifdef CONFIG_IIO_BUFFER
-	ret = iio_triggered_buffer_setup(indio_dev,
-					 iio_pollfunc_store_time,
-					 sgp_trigger_handler,
-					 NULL);
-	if (ret) {
-		dev_err(&client->dev, "failed to setup iio triggered buffer\n");
-		goto fail_free;
-	}
-#endif /* CONFIG_IIO_BUFFER */
 
 	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (!ret)
@@ -901,10 +890,12 @@ fail_free:
 static int sgp_remove(struct i2c_client *client)
 {
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
+	struct sgp_data *data = iio_priv(indio_dev);
 
-#ifdef CONFIG_IIO_BUFFER
-	iio_triggered_buffer_cleanup(indio_dev);
-#endif /* CONFIG_IIO_BUFFER */
+	if (data->iaq_thread) {
+		kthread_stop(data->iaq_thread);
+		data->iaq_thread = NULL;
+	}
 	devm_iio_device_unregister(&client->dev, indio_dev);
 	return 0;
 }
