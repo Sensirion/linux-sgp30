@@ -112,6 +112,7 @@ struct sgp_data {
 	struct task_struct *iaq_thread;
 	struct mutex data_lock; /* mutex to lock access to data buffer */
 	struct mutex i2c_lock; /* mutex to lock access to i2c */
+	unsigned long iaq_init_jiffies;
 	unsigned long last_update;
 
 	u64 serial_id;
@@ -123,7 +124,6 @@ struct sgp_data {
 	enum sgp_cmd measure_signal_cmd;
 	enum sgp_measure_mode measure_mode;
 	char *baseline_format;
-	bool iaq_initialized;
 	u8 baseline_len;
 	union sgp_reading buffer;
 };
@@ -446,7 +446,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 	switch (mask) {
 	case IIO_CHAN_INFO_PROCESSED:
 		mutex_lock(&data->data_lock);
-		if (!data->iaq_initialized) {
+		if (data->iaq_init_jiffies == 0) {
 			dev_warn(&data->client->dev,
 				 "IAQ potentially uninitialized\n");
 		}
@@ -572,7 +572,7 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	if (ret < 0)
 		goto unlock_fail;
 
-	data->iaq_initialized = true;
+	data->iaq_init_jiffies = jiffies;
 	if (!data->iaq_thread) {
 		data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
 					       "sgp-iaq");
@@ -656,7 +656,7 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	int ret;
 
 	mutex_lock(&data->data_lock);
-	data->iaq_initialized = false;
+	data->iaq_init_jiffies = 0;
 	ret = sgp_read_from_cmd(data, SGP_CMD_MEASURE_TEST, 1,
 				SGP_SELFTEST_DURATION_US);
 
@@ -741,7 +741,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	if (eng != 0)
 		return -ENODEV;
 
-	data->iaq_initialized = false;
+	data->iaq_init_jiffies = 0;
 	switch (product) {
 	case SGP30:
 		supported_versions =
