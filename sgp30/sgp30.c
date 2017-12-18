@@ -788,17 +788,17 @@ static IIO_DEVICE_ATTR(in_serial_id, 0444, sgp_serial_id_show, NULL, 0);
 static IIO_DEVICE_ATTR(in_feature_set_version, 0444,
 		       sgp_feature_set_version_show, NULL, 0);
 static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
-static IIO_DEVICE_ATTR(out_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
+static IIO_DEVICE_ATTR(do_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
 static IIO_DEVICE_ATTR(in_iaq_baseline, 0444, sgp_iaq_baseline_show, NULL, 0);
-static IIO_DEVICE_ATTR(out_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
+static IIO_DEVICE_ATTR(set_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
 
 static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_serial_id.dev_attr.attr,
 	&iio_dev_attr_in_feature_set_version.dev_attr.attr,
 	&iio_dev_attr_in_selftest.dev_attr.attr,
-	&iio_dev_attr_out_iaq_init.dev_attr.attr,
+	&iio_dev_attr_do_iaq_init.dev_attr.attr,
 	&iio_dev_attr_in_iaq_baseline.dev_attr.attr,
-	&iio_dev_attr_out_iaq_baseline.dev_attr.attr,
+	&iio_dev_attr_set_iaq_baseline.dev_attr.attr,
 	NULL
 };
 
