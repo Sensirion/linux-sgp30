@@ -289,6 +289,11 @@ static int sgp_read_from_cmd(struct sgp_data *data,
 	}
 	usleep_range(duration_us, duration_us + 1000);
 
+	if (word_count == 0) {
+		mutex_unlock(&data->i2c_lock);
+		return 0;
+	}
+
 	ret = i2c_master_recv(client, data_buf, size);
 	mutex_unlock(&data->i2c_lock);
 
