@@ -770,7 +770,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	};
 
 	for (ix = 0; ix < num_fs; ix++) {
-		if (supported_versions[ix].major == major &&
+		if (major == supported_versions[ix].major &&
 		    minor >= supported_versions[ix].minor)
 			return 0;
 	}
