@@ -516,7 +516,7 @@ unlock_fail:
 
 static int sgp_write_raw(struct iio_dev *indio_dev,
 			 struct iio_chan_spec const *chan,
-			 int val, int val2, long mask)
+			 int val, int val2, __attribute__((unused))long mask)
 {
 	struct sgp_data *data = iio_priv(indio_dev);
 	int ret;
@@ -533,7 +533,7 @@ static int sgp_write_raw(struct iio_dev *indio_dev,
 }
 
 static ssize_t sgp_iaq_init_store(struct device *dev,
-				  struct device_attribute *attr,
+				  __attribute__((unused))struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
@@ -586,7 +586,7 @@ unlock_fail:
 }
 
 static ssize_t sgp_iaq_baseline_show(struct device *dev,
-				     struct device_attribute *attr,
+				     __attribute__((unused))struct device_attribute *attr,
 				     char *buf)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
@@ -616,7 +616,7 @@ unlock_fail:
 }
 
 static ssize_t sgp_iaq_baseline_store(struct device *dev,
-				      struct device_attribute *attr,
+				      __attribute__((unused))struct device_attribute *attr,
 				      const char *buf, size_t count)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
@@ -649,7 +649,8 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 }
 
 static ssize_t sgp_selftest_show(struct device *dev,
-				 struct device_attribute *attr, char *buf)
+				 __attribute__((unused))struct device_attribute *attr,
+				 char *buf)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 	u16 measure_test;
@@ -675,7 +676,8 @@ unlock_fail:
 }
 
 static ssize_t sgp_serial_id_show(struct device *dev,
-				  struct device_attribute *attr, char *buf)
+				 __attribute__((unused))struct device_attribute *attr,
+				 char *buf)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 
@@ -683,7 +685,7 @@ static ssize_t sgp_serial_id_show(struct device *dev,
 }
 
 static ssize_t sgp_feature_set_version_show(struct device *dev,
-					    struct device_attribute *attr,
+					    __attribute__((unused))struct device_attribute *attr,
 					    char *buf)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
