@@ -111,11 +111,9 @@ union sgp_reading {
 struct sgp_data {
 	struct i2c_client *client;
 	struct task_struct *iaq_thread;
-	struct mutex data_lock; /* mutex to lock access to data buffer */
-	struct mutex i2c_lock; /* mutex to lock access to i2c */
+	struct mutex data_lock;
 	unsigned long iaq_init_jiffies;
 	unsigned long last_update;
-
 	u64 serial_id;
 	u16 chip_id;
 	u16 feature_set;
@@ -280,21 +278,15 @@ static int sgp_read_cmd(struct sgp_data *data, enum sgp_cmd cmd,
 	size_t size = word_count * (SGP_WORD_LEN + SGP_CRC8_LEN);
 	u8 *data_buf = &data->buffer.start;
 
-	mutex_lock(&data->i2c_lock);
 	ret = i2c_master_send(client, (const char *)&cmd, SGP_CMD_LEN);
-	if (ret != SGP_CMD_LEN) {
-		mutex_unlock(&data->i2c_lock);
+	if (ret != SGP_CMD_LEN)
 		return -EIO;
-	}
 	usleep_range(duration_us, duration_us + 1000);
 
-	if (word_count == 0) {
-		mutex_unlock(&data->i2c_lock);
+	if (word_count == 0)
 		return 0;
-	}
 
 	ret = i2c_master_recv(client, data_buf, size);
-	mutex_unlock(&data->i2c_lock);
 
 	if (ret < 0)
 		ret = -ETXTBSY;
@@ -335,18 +327,12 @@ static int sgp_write_cmd(struct sgp_data *data, enum sgp_cmd cmd, u16 *buf,
 				       SGP_WORD_LEN, SGP_CRC8_INIT);
 		buf_idx += SGP_CRC8_LEN;
 	}
-	mutex_lock(&data->i2c_lock);
 	ret = i2c_master_send(data->client, buffer, buffer_size);
-	if (ret != buffer_size) {
-		ret = -EIO;
-		goto unlock_return_count;
-	}
+	if (ret != buffer_size)
+		return -EIO;
 	ret = 0;
-	/* Wait inside lock to ensure the chip is ready before next command */
 	usleep_range(duration_us, duration_us + 1000);
 
-unlock_return_count:
-	mutex_unlock(&data->i2c_lock);
 	return ret;
 }
 
@@ -843,7 +829,6 @@ static int sgp_probe(struct i2c_client *client,
 	data->client = client;
 	crc8_populate_msb(sgp_crc8_table, SGP_CRC8_POLYNOMIAL);
 	mutex_init(&data->data_lock);
-	mutex_init(&data->i2c_lock);
 
 	/* get serial id and write it to client data */
 	ret = sgp_get_serial_id(data);
@@ -881,7 +866,6 @@ static int sgp_probe(struct i2c_client *client,
 	dev_err(&client->dev, "failed to register iio device\n");
 
 fail_free:
-	mutex_destroy(&data->i2c_lock);
 	mutex_destroy(&data->data_lock);
 	iio_device_free(indio_dev);
 	return ret;
