@@ -190,7 +190,6 @@ static const struct iio_chan_spec sgp30_channels[] = {
 			.endianness = IIO_BE,
 		},
 	},
-	IIO_CHAN_SOFT_TIMESTAMP(4),
 	{
 		.type = IIO_CONCENTRATION,
 		.address = SGP30_SET_AH_IDX,
@@ -198,7 +197,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.datasheet_name = "absolute humidty",
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
 		.output = 1,
-		.scan_index = 5
+		.scan_index = 4
 	},
 };
 
@@ -207,6 +206,7 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 		.type = IIO_CONCENTRATION,
 		.channel2 = IIO_MOD_VOC,
 		.datasheet_name = "TVOC signal",
+		.scan_index = 0,
 		.modified = 1,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
 		.address = SGPC3_IAQ_TVOC_IDX,
@@ -218,12 +218,11 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 		.address = SGPC3_SIG_ETOH_IDX,
 		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
-		.scan_index = 0,
+		.scan_index = 1,
 		.scan_type = {
 			.endianness = IIO_BE,
 		},
 	},
-	IIO_CHAN_SOFT_TIMESTAMP(2),
 };
 
 static struct sgp_device sgp_devices[] = {
