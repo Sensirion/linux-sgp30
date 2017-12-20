@@ -36,7 +36,8 @@
 #define SGP_CRC8_INIT			0xff
 #define SGP_CRC8_LEN			1
 #define SGP_CMD(cmd_word)		cpu_to_be16(cmd_word)
-#define SGP_CMD_DURATION_US		50000
+#define SGP_CMD_DURATION_US		12000
+#define SGP_MEASUREMENT_DURATION_US	50000
 #define SGP_SELFTEST_DURATION_US	220000
 #define SGP_CMD_HANDLING_DURATION_US	10000
 #define SGP_CMD_LEN			SGP_WORD_LEN
@@ -73,7 +74,7 @@ enum sgp_cmd {
 	SGP_CMD_SET_BASELINE		= SGP_CMD(0x201e),
 	SGP_CMD_GET_FEATURE_SET		= SGP_CMD(0x202f),
 	SGP_CMD_GET_SERIAL_ID		= SGP_CMD(0x3682),
-	SGP_CMD_MEASURE_TEST		= SGP_CMD(0x2032),
+	SGP_CMD_SELFTEST		= SGP_CMD(0x2032),
 
 	SGP30_CMD_MEASURE_SIGNAL	= SGP_CMD(0x2050),
 	SGP30_CMD_SET_ABSOLUTE_HUMIDITY = SGP_CMD(0x2061),
@@ -263,7 +264,7 @@ static int sgp_verify_buffer(struct sgp_data *data, size_t word_count)
 }
 
 /**
- * sgp_read_from_cmd() - reads data from SGP sensor after issuing a command
+ * sgp_read_cmd() - reads data from sensor after issuing a command
  * The caller must hold data->data_lock for the duration of the call.
  * @data:        SGP data
  * @cmd:         SGP Command to issue
@@ -271,10 +272,8 @@ static int sgp_verify_buffer(struct sgp_data *data, size_t word_count)
  *
  * Return:       0 on success, negative error otherwise.
  */
-static int sgp_read_from_cmd(struct sgp_data *data,
-			     enum sgp_cmd cmd,
-			     size_t word_count,
-			     unsigned long duration_us)
+static int sgp_read_cmd(struct sgp_data *data, enum sgp_cmd cmd,
+			size_t word_count, unsigned long duration_us)
 {
 	int ret;
 	struct i2c_client *client = data->client;
@@ -308,7 +307,7 @@ static int sgp_read_from_cmd(struct sgp_data *data,
 }
 
 /**
- * sgp_i2c_write_from_cmd() - write data to SGP sensor with a command
+ * sgp_i2c_write_cmd() - write data to SGP sensor with a command
  * @data:       SGP data
  * @cmd:        SGP Command to issue
  * @buf:        Data to write
@@ -316,11 +315,8 @@ static int sgp_read_from_cmd(struct sgp_data *data,
  *
  * Return:      0 on success, negative error otherwise.
  */
-static int sgp_write_from_cmd(struct sgp_data *data,
-			      enum sgp_cmd cmd,
-			      u16 *buf,
-			      size_t buf_size,
-			      unsigned long duration_us)
+static int sgp_write_cmd(struct sgp_data *data, enum sgp_cmd cmd, u16 *buf,
+			 size_t buf_size, unsigned long duration_us)
 {
 	int ret, ix;
 	u16 buf_idx = 0;
@@ -384,8 +380,8 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 		return 0;
 	}
 
-	ret = sgp_read_from_cmd(data, cmd, data->measurement_len,
-				SGP_CMD_DURATION_US);
+	ret = sgp_read_cmd(data, cmd, data->measurement_len,
+			   SGP_MEASUREMENT_DURATION_US);
 
 	if (ret < 0)
 		return ret;
@@ -431,8 +427,8 @@ static int sgp_absolute_humidity_store(struct sgp_data *data,
 	if (ah > 0 && ah_scaled == 0)
 		ah_scaled = 1;
 
-	return sgp_write_from_cmd(data, SGP30_CMD_SET_ABSOLUTE_HUMIDITY,
-				  &ah_scaled, 1, SGP_CMD_HANDLING_DURATION_US);
+	return sgp_write_cmd(data, SGP30_CMD_SET_ABSOLUTE_HUMIDITY,
+			     &ah_scaled, 1, SGP_CMD_HANDLING_DURATION_US);
 }
 
 static int sgp_read_raw(struct iio_dev *indio_dev,
@@ -595,8 +591,8 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
 	int ret, ix;
 
 	mutex_lock(&data->data_lock);
-	ret = sgp_read_from_cmd(data, SGP_CMD_GET_BASELINE, data->baseline_len,
-				SGP_CMD_DURATION_US);
+	ret = sgp_read_cmd(data, SGP_CMD_GET_BASELINE, data->baseline_len,
+			   SGP_CMD_DURATION_US);
 
 	if (ret < 0)
 		goto unlock_fail;
@@ -640,8 +636,8 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 		return -EIO;
 	}
 
-	ret = sgp_write_from_cmd(data, SGP_CMD_SET_BASELINE, words,
-				 data->baseline_len, SGP_CMD_DURATION_US);
+	ret = sgp_write_cmd(data, SGP_CMD_SET_BASELINE, words,
+			    data->baseline_len, SGP_CMD_DURATION_US);
 	if (ret < 0)
 		return -EIO;
 
@@ -658,8 +654,7 @@ static ssize_t sgp_selftest_show(struct device *dev,
 
 	mutex_lock(&data->data_lock);
 	data->iaq_init_jiffies = 0;
-	ret = sgp_read_from_cmd(data, SGP_CMD_MEASURE_TEST, 1,
-				SGP_SELFTEST_DURATION_US);
+	ret = sgp_read_cmd(data, SGP_CMD_SELFTEST, 1, SGP_SELFTEST_DURATION_US);
 
 	if (ret != 0)
 		goto unlock_fail;
@@ -700,8 +695,7 @@ static int sgp_get_serial_id(struct sgp_data *data)
 	struct sgp_crc_word *words;
 
 	mutex_lock(&data->data_lock);
-	ret = sgp_read_from_cmd(data, SGP_CMD_GET_SERIAL_ID, 3,
-				SGP_CMD_DURATION_US);
+	ret = sgp_read_cmd(data, SGP_CMD_GET_SERIAL_ID, 3, SGP_CMD_DURATION_US);
 	if (ret != 0)
 		goto unlock_fail;
 
@@ -858,8 +852,8 @@ static int sgp_probe(struct i2c_client *client,
 		return ret;
 
 	/* get feature set version and write it to client data */
-	ret = sgp_read_from_cmd(data, SGP_CMD_GET_FEATURE_SET, 1,
-				SGP_CMD_DURATION_US);
+	ret = sgp_read_cmd(data, SGP_CMD_GET_FEATURE_SET, 1,
+			   SGP_CMD_DURATION_US);
 	if (ret != 0)
 		return ret;
 
