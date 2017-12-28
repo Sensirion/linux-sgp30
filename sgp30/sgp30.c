@@ -86,13 +86,6 @@ enum sgp_cmd {
 	SGPC3_CMD_MEASURE_RAW		= SGP_CMD(0x2046),
 };
 
-enum sgp_measure_mode {
-	SGP_MEASURE_MODE_UNKNOWN,
-	SGP_MEASURE_MODE_IAQ,
-	SGP_MEASURE_MODE_SIGNAL,
-	SGP_MEASURE_MODE_ALL,
-};
-
 struct sgp_version {
 	u8 major;
 	u8 minor;
@@ -120,9 +113,9 @@ struct sgp_data {
 	u16 measurement_len;
 	int measure_interval_hz;
 	enum sgp_cmd iaq_init_cmd;
+	enum sgp_cmd last_cmd;
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_signal_cmd;
-	enum sgp_measure_mode measure_mode;
 	char *baseline_format;
 	u8 baseline_len;
 	u16 set_baseline[2];
@@ -243,7 +236,7 @@ static struct sgp_device sgp_devices[] = {
  * @data:       SGP data containing the raw buffer
  * @word_count: Num data words stored in the buffer, excluding CRC bytes
  *
- * Return:      0 on success, negative error code otherwise
+ * Return:      0 on success, negative error otherwise.
  */
 static int sgp_verify_buffer(struct sgp_data *data, size_t word_count)
 {
@@ -340,29 +333,19 @@ static int sgp_write_cmd(struct sgp_data *data, enum sgp_cmd cmd, u16 *buf,
 
 /**
  * sgp_get_measurement() - retrieve measurement result from sensor
+ * The measurement is skipped if the last measurement is still valid.
  * The caller must hold data->data_lock for the duration of the call.
- * @data:           SGP data
- * @cmd:            SGP Command to issue
- * @measure_mode:   SGP measurement mode
+ * @data:       SGP data
+ * @cmd:        SGP Command to issue
  *
  * Return:      0 on success, negative error otherwise.
  */
-static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
-			       enum sgp_measure_mode measure_mode)
+static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd)
 {
 	int ret;
 
-	/* if all channels are measured, we don't need to distinguish between
-	 * different measure modes
-	 */
-	if (data->measure_mode == SGP_MEASURE_MODE_ALL)
-		measure_mode = SGP_MEASURE_MODE_ALL;
-
-	/* Always measure if measure mode changed
-	 * SGP30 should only be polled once a second
-	 * SGPC3 should only be polled once every two seconds
-	 */
-	if (measure_mode == data->measure_mode &&
+	/* Only measure if measure command changed or the data expired */
+	if (data->last_cmd == cmd &&
 	    !time_after(jiffies,
 			data->last_update + data->measure_interval_hz * HZ)) {
 		return 0;
@@ -374,7 +357,7 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 	if (ret < 0)
 		return ret;
 
-	data->measure_mode = measure_mode;
+	data->last_cmd = cmd;
 	data->last_update = jiffies;
 
 	return 0;
@@ -411,8 +394,7 @@ static int sgp_iaq_threadfn(void *p)
 			}
 		}
 
-		ret = sgp_get_measurement(data, data->measure_iaq_cmd,
-					  SGP_MEASURE_MODE_IAQ);
+		ret = sgp_get_measurement(data, data->measure_iaq_cmd);
 		if (ret) {
 			dev_warn(&data->client->dev, "measurement error [%d]\n",
 				 ret);
@@ -459,8 +441,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			dev_warn(&data->client->dev,
 				 "IAQ potentially uninitialized\n");
 		}
-		ret = sgp_get_measurement(data, data->measure_iaq_cmd,
-					  SGP_MEASURE_MODE_IAQ);
+		ret = sgp_get_measurement(data, data->measure_iaq_cmd);
 		if (ret)
 			goto unlock_fail;
 		words = data->buffer.raw_words;
@@ -484,8 +465,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 		break;
 	case IIO_CHAN_INFO_RAW:
 		mutex_lock(&data->data_lock);
-		ret = sgp_get_measurement(data, data->measure_signal_cmd,
-					  SGP_MEASURE_MODE_SIGNAL);
+		ret = sgp_get_measurement(data, data->measure_signal_cmd);
 		if (ret)
 			goto unlock_fail;
 		words = data->buffer.raw_words;
@@ -561,6 +541,9 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 
 	mutex_lock(&data->data_lock);
 	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
+	data->iaq_init_jiffies = 0;
+	data->set_baseline[0] = 0;
+	data->set_baseline[1] = 0;
 	if (data->chip_id == SGPC3) {
 		ret = kstrtou32(buf, 10, &init_time);
 		if (ret)
@@ -589,12 +572,8 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	return count;
 }
 
-static ssize_t sgp_iaq_baseline_show(struct device *dev,
-				     __attribute__((unused))struct device_attribute *attr,
-				     char *buf)
+static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 {
-	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
-	u32 baseline;
 	u16 baseline_word;
 	int ret, ix;
 
@@ -605,18 +584,61 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
 	if (ret < 0)
 		goto unlock_fail;
 
-	baseline = 0;
 	for (ix = 0; ix < data->baseline_len; ix++) {
 		baseline_word = be16_to_cpu(data->buffer.raw_words[ix].value);
-		baseline |= baseline_word << (16 * ix);
+		baseline_words[ix] = baseline_word;
 	}
-
-	mutex_unlock(&data->data_lock);
-	return sprintf(buf, data->baseline_format, baseline);
 
 unlock_fail:
 	mutex_unlock(&data->data_lock);
 	return ret;
+}
+
+static ssize_t sgp_iaq_baseline_show(struct device *dev,
+				     __attribute__((unused))struct device_attribute *attr,
+				     char *buf)
+{
+	u16 baseline_words[2];
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+	int ret = sgp_get_baseline(data, baseline_words);
+	if (ret < 0)
+		return ret;
+
+	return sprintf(buf, data->baseline_format, baseline_words);
+}
+
+/**
+ * Retrieve the sensor's baseline and report whether it's valid for persistance
+ * @baseline:   sensor's current baseline
+ *
+ * Return:      1 if the baseline was set manually or the sensor has been
+ *              operating for at least 12h, 0 if the baseline is not yet valid,
+ *              a negative error otherwise.
+ */
+static int sgp_is_baseline_valid(struct sgp_data *data, u16 *baseline_words)
+{
+	int ret = sgp_get_baseline(data, baseline_words);
+	if (ret < 0)
+		return ret;
+
+	mutex_lock(&data->data_lock);
+	if (data->set_baseline[0] ||
+	    time_after(jiffies, data->iaq_init_jiffies + 60 * 60 * 12 * HZ)) {
+		ret = baseline_words[0] > 0;
+	}
+	mutex_unlock(&data->data_lock);
+
+	return ret;
+}
+
+static void sgp_set_baseline(struct sgp_data *data, u16 *baseline_words)
+{
+	mutex_lock(&data->data_lock);
+	data->set_baseline[0] = baseline_words[0];
+	if (data->baseline_len == 2)
+		data->set_baseline[1] = baseline_words[1];
+	data->iaq_init_jiffies = 0;
+	mutex_unlock(&data->data_lock);
 }
 
 static ssize_t sgp_iaq_baseline_store(struct device *dev,
@@ -644,13 +666,7 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 		return -EIO;
 	}
 
-	mutex_lock(&data->data_lock);
-	data->set_baseline[0] = words[0];
-	if (data->baseline_len == 2)
-		data->set_baseline[1] = words[1];
-	data->iaq_init_jiffies = 0;
-	mutex_unlock(&data->data_lock);
-
+	sgp_set_baseline(data, words);
 	return count;
 }
 
@@ -659,7 +675,9 @@ static ssize_t sgp_selftest_show(struct device *dev,
 				 char *buf)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+	u16 baseline_words[2];
 	u16 measure_test;
+	int baseline_valid = sgp_is_baseline_valid(data, baseline_words);
 	int ret;
 
 	mutex_lock(&data->data_lock);
@@ -671,6 +689,10 @@ static ssize_t sgp_selftest_show(struct device *dev,
 
 	measure_test = be16_to_cpu(data->buffer.raw_words[0].value);
 	mutex_unlock(&data->data_lock);
+
+	if (baseline_valid > 0)
+		sgp_set_baseline(data, baseline_words);
+
 
 	return sprintf(buf, "%s\n",
 		       measure_test ^ SGP_SELFTEST_OK ? "FAILED" : "OK");
@@ -763,7 +785,6 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->set_baseline[0] = 0;
 		data->set_baseline[1] = 0;
 		data->baseline_format = "%08x\n";
-		data->measure_mode = SGP_MEASURE_MODE_UNKNOWN;
 		break;
 	case SGPC3:
 		supported_versions =
@@ -777,7 +798,6 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->baseline_len = 1;
 		data->set_baseline[0] = 0;
 		data->baseline_format = "%04x\n";
-		data->measure_mode = SGP_MEASURE_MODE_ALL;
 		break;
 	default:
 		return -ENODEV;
