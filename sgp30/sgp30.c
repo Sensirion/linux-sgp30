@@ -119,11 +119,13 @@ struct sgp_data {
 	u16 feature_set;
 	u16 measurement_len;
 	int measure_interval_hz;
+	enum sgp_cmd iaq_init_cmd;
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_signal_cmd;
 	enum sgp_measure_mode measure_mode;
 	char *baseline_format;
 	u8 baseline_len;
+	u16 set_baseline[2];
 	union sgp_reading buffer;
 };
 
@@ -381,17 +383,42 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 static int sgp_iaq_threadfn(void *p)
 {
 	struct sgp_data *data = (struct sgp_data *)p;
-	long intv = data->measure_interval_hz * 1000000;
+	long intv_low = data->measure_interval_hz * 1000000;
+	long intv_high = intv_low + 1000;
 	int ret;
 
 	while(!kthread_should_stop()) {
 		mutex_lock(&data->data_lock);
+		if (data->iaq_init_jiffies == 0) {
+			ret = sgp_read_cmd(data, data->iaq_init_cmd, 0,
+					   SGP_CMD_DURATION_US);
+			if (ret < 0) {
+				mutex_unlock(&data->data_lock);
+				usleep_range(intv_low, intv_high);
+				continue;
+			}
+			data->iaq_init_jiffies = jiffies;
+			if (data->set_baseline) {
+				ret = sgp_write_cmd(data, SGP_CMD_SET_BASELINE,
+						    data->set_baseline,
+						    data->baseline_len,
+						    SGP_CMD_DURATION_US);
+				if (ret < 0) {
+					mutex_unlock(&data->data_lock);
+					usleep_range(intv_low, intv_high);
+					continue;
+				}
+			}
+		}
+
 		ret = sgp_get_measurement(data, data->measure_iaq_cmd,
 					  SGP_MEASURE_MODE_IAQ);
-		if (ret)
-			dev_warn(&data->client->dev, "measurement error [%d]\n", ret);
+		if (ret) {
+			dev_warn(&data->client->dev, "measurement error [%d]\n",
+				 ret);
+		}
 		mutex_unlock(&data->data_lock);
-		usleep_range(intv - 500, intv + 500);
+		usleep_range(intv_low, intv_high);
 	}
 	return 0;
 }
@@ -414,7 +441,7 @@ static int sgp_absolute_humidity_store(struct sgp_data *data,
 		ah_scaled = 1;
 
 	return sgp_write_cmd(data, SGP30_CMD_SET_ABSOLUTE_HUMIDITY,
-			     &ah_scaled, 1, SGP_CMD_HANDLING_DURATION_US);
+			     &ah_scaled, 1, SGP_CMD_DURATION_US);
 }
 
 static int sgp_read_raw(struct iio_dev *indio_dev,
@@ -514,57 +541,52 @@ static int sgp_write_raw(struct iio_dev *indio_dev,
 	return ret;
 }
 
+static void sgp_start_iaq_thread(struct sgp_data *data)
+{
+	mutex_lock(&data->data_lock);
+	if (!data->iaq_thread) {
+		data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
+					       "sgp-iaq");
+	}
+	mutex_unlock(&data->data_lock);
+}
+
 static ssize_t sgp_iaq_init_store(struct device *dev,
 				  __attribute__((unused))struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 	u32 init_time;
-	enum sgp_cmd cmd;
 	int ret;
 
-	cmd = SGP_CMD_IAQ_INIT;
+	mutex_lock(&data->data_lock);
+	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
 	if (data->chip_id == SGPC3) {
 		ret = kstrtou32(buf, 10, &init_time);
-
 		if (ret)
 			return -EINVAL;
 
 		switch (init_time) {
 		case 0:
-			cmd = SGPC3_CMD_IAQ_INIT0;
+			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT0;
 			break;
 		case 16:
-			cmd = SGPC3_CMD_IAQ_INIT16;
+			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT16;
 			break;
 		case 64:
-			cmd = SGPC3_CMD_IAQ_INIT64;
+			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT64;
 			break;
 		case 184:
-			cmd = SGPC3_CMD_IAQ_INIT184;
+			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT184;
 			break;
 		default:
 			return -EINVAL;
 		}
 	}
-
-	mutex_lock(&data->data_lock);
-	ret = sgp_read_from_cmd(data, cmd, 0, SGP_CMD_DURATION_US);
-
-	if (ret < 0)
-		goto unlock_fail;
-
-	data->iaq_init_jiffies = jiffies;
-	if (!data->iaq_thread) {
-		data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
-					       "sgp-iaq");
-	}
 	mutex_unlock(&data->data_lock);
+
+	sgp_start_iaq_thread(data);
 	return count;
-
-unlock_fail:
-	mutex_unlock(&data->data_lock);
-	return ret;
 }
 
 static ssize_t sgp_iaq_baseline_show(struct device *dev,
@@ -622,10 +644,12 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 		return -EIO;
 	}
 
-	ret = sgp_write_cmd(data, SGP_CMD_SET_BASELINE, words,
-			    data->baseline_len, SGP_CMD_DURATION_US);
-	if (ret < 0)
-		return -EIO;
+	mutex_lock(&data->data_lock);
+	data->set_baseline[0] = words[0];
+	if (data->baseline_len == 2)
+		data->set_baseline[1] = words[1];
+	data->iaq_init_jiffies = 0;
+	mutex_unlock(&data->data_lock);
 
 	return count;
 }
@@ -723,6 +747,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	if (eng != 0)
 		return -ENODEV;
 
+	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
 	data->iaq_init_jiffies = 0;
 	switch (product) {
 	case SGP30:
@@ -735,6 +760,8 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_signal_cmd = SGP30_CMD_MEASURE_SIGNAL;
 		data->chip_id = SGP30;
 		data->baseline_len = 2;
+		data->set_baseline[0] = 0;
+		data->set_baseline[1] = 0;
 		data->baseline_format = "%08x\n";
 		data->measure_mode = SGP_MEASURE_MODE_UNKNOWN;
 		break;
@@ -748,6 +775,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_signal_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->chip_id = SGPC3;
 		data->baseline_len = 1;
+		data->set_baseline[0] = 0;
 		data->baseline_format = "%04x\n";
 		data->measure_mode = SGP_MEASURE_MODE_ALL;
 		break;
@@ -860,10 +888,13 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->num_channels = chip->num_channels;
 
 	ret = devm_iio_device_register(&client->dev, indio_dev);
-	if (!ret)
-		return ret;
+	if (ret) {
+		dev_err(&client->dev, "failed to register iio device\n");
+		goto fail_free;
+	}
 
-	dev_err(&client->dev, "failed to register iio device\n");
+	sgp_start_iaq_thread(data);
+	return ret;
 
 fail_free:
 	mutex_destroy(&data->data_lock);
