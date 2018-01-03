@@ -6,7 +6,7 @@ stages:
   - deploy
 
 variables:
-  PACKAGE_NAME: "sgpxx"
+  PACKAGE_NAME: "sgp30"
 
 test:
   stage: test
@@ -35,7 +35,7 @@ build:
       - LICENSE
       - Makefile
       - README
-      - sgpxx/
+      - sgp30/
 
 deploy:
   stage: deploy
@@ -52,5 +52,5 @@ deploy:
       - LICENSE
       - Makefile
       - README
-      - sgpxx/
+      - sgp30/
 

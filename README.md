@@ -1,6 +1,6 @@
 # Sensirion SGP30/SGPC3 Linux Kernel Driver
 
-The sgpxx driver for the Sensirion SGP30 and SGPC3 drivers is based on the IIO
+The sgp30 driver for the Sensirion SGP30 and SGPC3 drivers is based on the IIO
 subsystem
 
 ## Requirements
@@ -22,7 +22,7 @@ With support for triggered buffers:
 /:      The root directory contains the Makefile needed for out-of-tree
         module builds.
 
-/sgpxx: The sgpxx directory contains the driver source and Kconfig as needed
+/sgp30: The sgp30 directory contains the driver source and Kconfig as needed
         for upstream merging with the Linux sources.
 
 ## Building
@@ -62,7 +62,7 @@ The driver is meant for direct use with sysfs or libiio.
 Errors are printed to the kernel log (dmesg)
 
 ### Loading the Kernel Module
-Load the dependencies of the sgpxx.ko kernel module:
+Load the dependencies of the sgp30.ko kernel module:
 
 ```bash
 sudo modprobe industrialio
@@ -87,13 +87,13 @@ Load the kernel module with the appropriate command:
 * Out-of-tree build
 
       ```bash
-      sudo insmod sgpxx.ko
+      sudo insmod sgp30.ko
       ```
 
 * In-kernel build
 
       ```bash
-      sudo modprobe sgpxx
+      sudo modprobe sgp30
       ```
 
 ### Instantiation
@@ -203,6 +203,6 @@ Unload the driver by removing the device instance and then unloading the module.
 
 ```bash
 echo 0x58 | sudo tee /sys/class/i2c-adapter/i2c-1/delete_device
-sudo rmmod sgpxx
+sudo rmmod sgp30
 ```
 

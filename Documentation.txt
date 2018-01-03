@@ -1,8 +1,8 @@
-sgpxx: Industrial IO driver for Sensirion I2C Multi-Pixel Gas Sensors
+sgp30: Industrial IO driver for Sensirion I2C Multi-Pixel Gas Sensors
 
 1. Overview
 
-The sgpxx driver supports the Sensirion SGP30 and SGPC3 multi-pixel gas sensors.
+The sgp30 driver supports the Sensirion SGP30 and SGPC3 multi-pixel gas sensors.
 
 Datasheets:
 https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGP30_Datasheet_EN.pdf
@@ -12,7 +12,7 @@ https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_
 
 2.1. Driver Instantiation
 
-The sgpxx driver must be instantiated on the corresponding i2c bus with the
+The sgp30 driver must be instantiated on the corresponding i2c bus with the
 product name (sgp30 or sgpc3) and i2c address (0x58).
 
 Example instantiation of an sgp30 on i2c bus 1 (i2c-1):

@@ -1,6 +1,6 @@
 # For in-kernel builds add the following line to
 # $KERNELDIR/drivers/iio/chemical/Makefile
 #
-# obj-$(CONFIG_SENSIRION_SGPXX) += sgpxx.o
+# obj-$(CONFIG_SENSIRION_SGP30) += sgp30.o
 
-obj-m += sgpxx.o
+obj-m += sgp30.o
