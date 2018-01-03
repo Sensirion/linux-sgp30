@@ -365,22 +365,16 @@ static int sgp_iaq_threadfn(void *p)
 		if (data->iaq_init_jiffies == 0) {
 			ret = sgp_read_cmd(data, data->iaq_init_cmd, 0,
 					   SGP_CMD_DURATION_US);
-			if (ret < 0) {
-				mutex_unlock(&data->data_lock);
-				usleep_range(intv_low, intv_high);
-				continue;
-			}
+			if (ret < 0)
+				goto unlock_sleep_continue;
 			data->iaq_init_jiffies = jiffies;
 			if (data->set_baseline) {
 				ret = sgp_write_cmd(data, SGP_CMD_SET_BASELINE,
 						    data->set_baseline,
 						    data->baseline_len,
 						    SGP_CMD_DURATION_US);
-				if (ret < 0) {
-					mutex_unlock(&data->data_lock);
-					usleep_range(intv_low, intv_high);
-					continue;
-				}
+				if (ret < 0)
+					goto unlock_sleep_continue;
 			}
 		}
 
@@ -389,6 +383,7 @@ static int sgp_iaq_threadfn(void *p)
 			dev_warn(&data->client->dev, "measurement error [%d]\n",
 				 ret);
 		}
+unlock_sleep_continue:
 		mutex_unlock(&data->data_lock);
 		usleep_range(intv_low, intv_high);
 	}
