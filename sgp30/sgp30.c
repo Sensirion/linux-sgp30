@@ -59,7 +59,6 @@ enum sgp30_channel_idx {
 	SGP30_IAQ_CO2EQ_IDX,
 	SGP30_SIG_ETOH_IDX,
 	SGP30_SIG_H2_IDX,
-	SGP30_SET_AH_IDX,
 };
 
 enum sgpc3_channel_idx {
@@ -183,15 +182,6 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.scan_type = {
 			.endianness = IIO_BE,
 		},
-	},
-	{
-		.type = IIO_CONCENTRATION,
-		.address = SGP30_SET_AH_IDX,
-		.extend_name = "ah",
-		.datasheet_name = "absolute humidty",
-		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
-		.output = 1,
-		.scan_index = 4
 	},
 };
 
@@ -405,25 +395,32 @@ static int sgp_iaq_threadfn(void *p)
 	return 0;
 }
 
-static int sgp_absolute_humidity_store(struct sgp_data *data,
-				       int val, int val2)
+static ssize_t sgp_absolute_humidity_store(struct device *dev,
+					   __attribute__((unused))struct device_attribute *attr,
+					   const char *buf, size_t count)
 {
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 	u32 ah;
 	u16 ah_scaled;
+	int ret;
 
-	if (val < 0 || val > 256 || (val == 256 && val2 > 0))
+	ret = sscanf(buf, "%u", &ah);
+	if (ret != 1 || ah < 0 || ah > 256000)
 		return -EINVAL;
 
-	ah = val * 1000 + val2 / 1000;
 	/* ah_scaled = (u16)((ah / 1000.0) * 256.0) */
 	ah_scaled = (u16)(((u64)ah * 256 * 16777) >> 24);
 
-	/* ensure we don't disable AH compensation due to rounding */
+	/* don't disable AH compensation due to rounding */
 	if (ah > 0 && ah_scaled == 0)
 		ah_scaled = 1;
 
-	return sgp_write_cmd(data, SGP30_CMD_SET_ABSOLUTE_HUMIDITY,
-			     &ah_scaled, 1, SGP_CMD_DURATION_US);
+	ret = sgp_write_cmd(data, SGP30_CMD_SET_ABSOLUTE_HUMIDITY,
+			    &ah_scaled, 1, SGP_CMD_DURATION_US);
+	if (ret)
+		return ret;
+
+	return count;
 }
 
 static int sgp_read_raw(struct iio_dev *indio_dev,
@@ -500,24 +497,6 @@ unlock_fail:
 	default:
 		ret = -EINVAL;
 	}
-	return ret;
-}
-
-static int sgp_write_raw(struct iio_dev *indio_dev,
-			 struct iio_chan_spec const *chan,
-			 int val, int val2, __attribute__((unused))long mask)
-{
-	struct sgp_data *data = iio_priv(indio_dev);
-	int ret;
-
-	switch (chan->address) {
-	case SGP30_SET_AH_IDX:
-		ret = sgp_absolute_humidity_store(data, val, val2);
-		break;
-	default:
-		ret = -EINVAL;
-	}
-
 	return ret;
 }
 
@@ -821,6 +800,8 @@ static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
 static IIO_DEVICE_ATTR(do_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
 static IIO_DEVICE_ATTR(in_iaq_baseline, 0444, sgp_iaq_baseline_show, NULL, 0);
 static IIO_DEVICE_ATTR(set_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
+static IIO_DEVICE_ATTR(set_absolute_humidity, 0220, NULL,
+		       sgp_absolute_humidity_store, 0);
 
 static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_serial_id.dev_attr.attr,
@@ -829,6 +810,7 @@ static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_do_iaq_init.dev_attr.attr,
 	&iio_dev_attr_in_iaq_baseline.dev_attr.attr,
 	&iio_dev_attr_set_iaq_baseline.dev_attr.attr,
+	&iio_dev_attr_set_absolute_humidity.dev_attr.attr,
 	NULL
 };
 
@@ -842,7 +824,6 @@ static const struct iio_info sgp_info = {
 	.driver_module	= THIS_MODULE,
 #endif /* LINUX_VERSION_CODE */
 	.read_raw	= sgp_read_raw,
-	.write_raw	= sgp_write_raw,
 };
 
 static const struct of_device_id sgp_dt_ids[] = {
