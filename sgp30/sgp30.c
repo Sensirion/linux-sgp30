@@ -105,6 +105,7 @@ struct sgp_data {
 	struct task_struct *iaq_thread;
 	struct mutex data_lock;
 	unsigned long iaq_init_jiffies;
+	unsigned long iaq_init_skip_jiffies;
 	unsigned long last_update;
 	u64 serial_id;
 	u16 chip_id;
@@ -347,6 +348,13 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd)
 	if (ret < 0)
 		return ret;
 
+	if (cmd == data->measure_iaq_cmd &&
+	    !time_after(jiffies,
+			data->iaq_init_jiffies + data->iaq_init_skip_jiffies)) {
+		/* data contains default values */
+		return -EBUSY;
+	}
+
 	data->last_cmd = cmd;
 	data->last_update = jiffies;
 
@@ -359,6 +367,7 @@ static int sgp_iaq_threadfn(void *p)
 	long intv_low = data->measure_interval_hz * 1000000;
 	long intv_high = intv_low + 1000;
 	int ret;
+	bool expect_busy;
 
 	while(!kthread_should_stop()) {
 		mutex_lock(&data->data_lock);
@@ -378,8 +387,10 @@ static int sgp_iaq_threadfn(void *p)
 			}
 		}
 
+		expect_busy = !time_after(jiffies, data->iaq_init_jiffies +
+						   data->iaq_init_skip_jiffies);
 		ret = sgp_get_measurement(data, data->measure_iaq_cmd);
-		if (ret) {
+		if (ret && !(expect_busy && ret == -EBUSY)) {
 			dev_warn(&data->client->dev, "measurement error [%d]\n",
 				 ret);
 		}
@@ -516,6 +527,7 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	mutex_lock(&data->data_lock);
 	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
 	data->iaq_init_jiffies = 0;
+	data->iaq_init_skip_jiffies = 15 * HZ;
 	data->set_baseline[0] = 0;
 	data->set_baseline[1] = 0;
 	if (data->chip_id == SGPC3) {
@@ -539,6 +551,7 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 		default:
 			return -EINVAL;
 		}
+		data->iaq_init_skip_jiffies = (21 + init_time) * HZ;
 	}
 	mutex_unlock(&data->data_lock);
 
