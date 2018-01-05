@@ -344,7 +344,6 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd)
 
 	ret = sgp_read_cmd(data, cmd, data->measurement_len,
 			   SGP_MEASUREMENT_DURATION_US);
-
 	if (ret < 0)
 		return ret;
 
@@ -567,7 +566,6 @@ static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 	mutex_lock(&data->data_lock);
 	ret = sgp_read_cmd(data, SGP_CMD_GET_BASELINE, data->baseline_len,
 			   SGP_CMD_DURATION_US);
-
 	if (ret < 0)
 		goto unlock_fail;
 
@@ -670,7 +668,6 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	mutex_lock(&data->data_lock);
 	data->iaq_init_jiffies = 0;
 	ret = sgp_read_cmd(data, SGP_CMD_SELFTEST, 1, SGP_SELFTEST_DURATION_US);
-
 	if (ret != 0)
 		goto unlock_fail;
 
@@ -747,11 +744,9 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 			product);
 		return -ENODEV;
 	}
-
 	if (reserved != 0)
 		dev_warn(&data->client->dev, "reserved bits set: 0x%04hx\n",
 			 reserved);
-
 	/* engineering samples are not supported */
 	if (eng != 0)
 		return -ENODEV;
@@ -869,7 +864,6 @@ static int sgp_probe(struct i2c_client *client,
 
 	/* get serial id and write it to client data */
 	ret = sgp_get_serial_id(data);
-
 	if (ret != 0)
 		return ret;
 
