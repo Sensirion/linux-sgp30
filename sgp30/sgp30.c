@@ -273,11 +273,10 @@ static int sgp_read_cmd(struct sgp_data *data, enum sgp_cmd cmd,
 		return 0;
 
 	ret = i2c_master_recv(client, data_buf, size);
-
 	if (ret < 0)
-		ret = -ETXTBSY;
+		ret = -EBUSY;
 	else if (ret != size)
-		ret = -EINTR;
+		ret = -EIO;
 	else
 		ret = sgp_verify_buffer(data, word_count);
 
