@@ -108,7 +108,7 @@ struct sgp_data {
 	unsigned long iaq_init_skip_jiffies;
 	unsigned long last_update;
 	u64 serial_id;
-	u16 chip_id;
+	u16 product_id;
 	u16 feature_set;
 	u16 measurement_len;
 	int measure_interval_hz;
@@ -530,7 +530,7 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	data->iaq_init_skip_jiffies = 15 * HZ;
 	data->set_baseline[0] = 0;
 	data->set_baseline[1] = 0;
-	if (data->chip_id == SGPC3) {
+	if (data->product_id == SGPC3) {
 		ret = kstrtou32(buf, 10, &init_time);
 		if (ret)
 			return -EINVAL;
@@ -729,7 +729,7 @@ unlock_fail:
 }
 
 static int setup_and_check_sgp_data(struct sgp_data *data,
-				    unsigned int chip_id)
+				    unsigned int product_id)
 {
 	u16 minor, major, product, eng, ix, num_fs, reserved;
 	struct sgp_version *supported_versions;
@@ -741,7 +741,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 	minor = data->feature_set & 0x001f;
 
 	/* driver does not match product */
-	if (product != chip_id) {
+	if (product != product_id) {
 		dev_err(&data->client->dev,
 			"sensor reports a different product: 0x%04hx\n",
 			product);
@@ -767,7 +767,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_interval_hz = SGP30_MEASURE_INTERVAL_HZ;
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_signal_cmd = SGP30_CMD_MEASURE_SIGNAL;
-		data->chip_id = SGP30;
+		data->product_id = SGP30;
 		data->baseline_len = 2;
 		data->set_baseline[0] = 0;
 		data->set_baseline[1] = 0;
@@ -781,7 +781,7 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_interval_hz = SGPC3_MEASURE_INTERVAL_HZ;
 		data->measure_iaq_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->measure_signal_cmd = SGPC3_CMD_MEASURE_RAW;
-		data->chip_id = SGPC3;
+		data->product_id = SGPC3;
 		data->baseline_len = 1;
 		data->set_baseline[0] = 0;
 		data->baseline_format = "%04x\n";
@@ -847,7 +847,7 @@ static int sgp_probe(struct i2c_client *client,
 	struct sgp_data *data;
 	struct sgp_device *chip;
 	const struct of_device_id *of_id;
-	unsigned long chip_id;
+	unsigned long product_id;
 	int ret;
 
 	indio_dev = devm_iio_device_alloc(&client->dev, sizeof(*data));
@@ -856,11 +856,11 @@ static int sgp_probe(struct i2c_client *client,
 
 	of_id = of_match_device(sgp_dt_ids, &client->dev);
 	if (!of_id)
-		chip_id = id->driver_data;
+		product_id = id->driver_data;
 	else
-		chip_id = (unsigned long)of_id->data;
+		product_id = (unsigned long)of_id->data;
 
-	chip = &sgp_devices[chip_id];
+	chip = &sgp_devices[product_id];
 	data = iio_priv(indio_dev);
 	i2c_set_clientdata(client, indio_dev);
 	data->client = client;
@@ -881,7 +881,7 @@ static int sgp_probe(struct i2c_client *client,
 
 	data->feature_set = be16_to_cpu(data->buffer.raw_words[0].value);
 
-	ret = setup_and_check_sgp_data(data, chip_id);
+	ret = setup_and_check_sgp_data(data, product_id);
 	if (ret < 0)
 		goto fail_free;
 
