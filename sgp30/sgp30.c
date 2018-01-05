@@ -661,11 +661,18 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 	u16 baseline_words[2];
 	u16 measure_test;
-	int baseline_valid = sgp_is_baseline_valid(data, baseline_words);
+	int baseline_valid = 0;
 	int ret;
 
+	if (data->product_id == SGP30) {
+		/* On the SGP30, the self-test interferes with the
+		 * IAQ initialization timer */
+		baseline_valid = sgp_is_baseline_valid(data, baseline_words);
+	}
+
 	mutex_lock(&data->data_lock);
-	data->iaq_init_jiffies = 0;
+	if (data->product_id == SGP30)
+		data->iaq_init_jiffies = 0;
 	ret = sgp_read_cmd(data, SGP_CMD_SELFTEST, 1, SGP_SELFTEST_DURATION_US);
 	if (ret != 0)
 		goto unlock_fail;
@@ -673,9 +680,8 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	measure_test = be16_to_cpu(data->buffer.raw_words[0].value);
 	mutex_unlock(&data->data_lock);
 
-	if (baseline_valid > 0)
+	if (data->product_id == SGP30 && baseline_valid > 0)
 		sgp_set_baseline(data, baseline_words);
-
 
 	return sprintf(buf, "%s\n",
 		       measure_test ^ SGP_SELFTEST_OK ? "FAILED" : "OK");
