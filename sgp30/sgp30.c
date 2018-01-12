@@ -530,8 +530,10 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	data->set_baseline[1] = 0;
 	if (data->product_id == SGPC3) {
 		ret = kstrtou32(buf, 10, &init_time);
-		if (ret)
-			return -EINVAL;
+		if (ret) {
+			ret = -EINVAL;
+			goto unlock_fail;
+		}
 
 		switch (init_time) {
 		case 0:
@@ -547,7 +549,8 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT184;
 			break;
 		default:
-			return -EINVAL;
+			ret = -EINVAL;
+			goto unlock_fail;
 		}
 		data->iaq_init_skip_jiffies = (21 + init_time) * HZ;
 	}
@@ -555,6 +558,10 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 
 	sgp_start_iaq_thread(data);
 	return count;
+
+unlock_fail:
+	mutex_unlock(&data->data_lock);
+	return ret;
 }
 
 static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
