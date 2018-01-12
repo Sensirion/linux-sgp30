@@ -116,7 +116,6 @@ struct sgp_data {
 	enum sgp_cmd last_cmd;
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_signal_cmd;
-	char *baseline_format;
 	u8 baseline_len;
 	u16 set_baseline[2];
 	union sgp_reading buffer;
@@ -375,7 +374,7 @@ static int sgp_iaq_threadfn(void *p)
 			if (ret < 0)
 				goto unlock_sleep_continue;
 			data->iaq_init_jiffies = jiffies;
-			if (data->set_baseline) {
+			if (data->set_baseline[0]) {
 				ret = sgp_write_cmd(data, SGP_CMD_SET_BASELINE,
 						    data->set_baseline,
 						    data->baseline_len,
@@ -595,7 +594,11 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	return sprintf(buf, data->baseline_format, baseline_words);
+	if (data->baseline_len == 1)
+		return sprintf(buf, "%04hx\n", baseline_words[0]);
+
+	return sprintf(buf, "%04hx%04hx\n", baseline_words[0],
+		       baseline_words[1]);
 }
 
 /**
@@ -645,10 +648,7 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	if (count - newline == (data->baseline_len * 4)) {
 		if (data->baseline_len == 1)
 			ret = sscanf(buf, "%04hx", &words[0]);
-		else if (data->baseline_len == 2)
-			ret = sscanf(buf, "%04hx%04hx", &words[0], &words[1]);
-		else
-			return -EIO;
+		ret = sscanf(buf, "%04hx%04hx", &words[0], &words[1]);
 	}
 
 	/* Check if baseline format is correct */
@@ -765,6 +765,8 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 
 	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
 	data->iaq_init_jiffies = 0;
+	data->set_baseline[0] = 0;
+	data->set_baseline[1] = 0;
 	switch (product) {
 	case SGP30:
 		supported_versions =
@@ -776,9 +778,6 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_signal_cmd = SGP30_CMD_MEASURE_SIGNAL;
 		data->product_id = SGP30;
 		data->baseline_len = 2;
-		data->set_baseline[0] = 0;
-		data->set_baseline[1] = 0;
-		data->baseline_format = "%08x\n";
 		break;
 	case SGPC3:
 		supported_versions =
@@ -790,8 +789,6 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		data->measure_signal_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->product_id = SGPC3;
 		data->baseline_len = 1;
-		data->set_baseline[0] = 0;
-		data->baseline_format = "%04x\n";
 		break;
 	default:
 		return -ENODEV;
