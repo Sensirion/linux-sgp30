@@ -566,7 +566,7 @@ unlock_fail:
 static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 {
 	u16 baseline_word;
-	int ret, ix;
+	int ret, ix, jx;
 
 	mutex_lock(&data->data_lock);
 	ret = sgp_read_cmd(data, SGP_CMD_GET_BASELINE, data->baseline_len,
@@ -574,8 +574,9 @@ static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 	if (ret < 0)
 		goto unlock_fail;
 
-	for (ix = 0; ix < data->baseline_len; ix++) {
-		baseline_word = be16_to_cpu(data->buffer.raw_words[ix].value);
+	for (ix = 0, jx = data->baseline_len - 1; ix < data->baseline_len;
+	     ix++, jx--) {
+		baseline_word = be16_to_cpu(data->buffer.raw_words[jx].value);
 		baseline_words[ix] = baseline_word;
 	}
 
