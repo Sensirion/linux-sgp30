@@ -14,8 +14,8 @@
  * GNU General Public License for more details.
  *
  * Datasheets:
- * https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGP30_Datasheet_EN.pdf
- * https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGPC3_Datasheet_EN.pdf
+ * https://www.sensirion.com/file/datasheet_sgp30
+ * https://www.sensirion.com/file/datasheet_sgpc3
  */
 
 #include <linux/crc8.h>
