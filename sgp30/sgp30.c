@@ -345,16 +345,15 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd)
 	if (ret < 0)
 		return ret;
 
+	data->last_cmd = cmd;
+	data->last_update = jiffies;
+
 	if (cmd == data->measure_iaq_cmd &&
 	    !time_after(jiffies,
 			data->iaq_init_jiffies + data->iaq_init_skip_jiffies)) {
 		/* data contains default values */
 		return -EBUSY;
 	}
-
-	data->last_cmd = cmd;
-	data->last_update = jiffies;
-
 	return 0;
 }
 
