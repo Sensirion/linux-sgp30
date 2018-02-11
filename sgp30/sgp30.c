@@ -326,10 +326,12 @@ static int sgp_write_cmd(struct sgp_data *data, enum sgp_cmd cmd, u16 *buf,
  * The caller must hold data->data_lock for the duration of the call.
  * @data:       SGP data
  * @cmd:        SGP Command to issue
+ * @no_default: Return -EBUSY instead of default values reported by the sensor
  *
  * Return:      0 on success, negative error otherwise.
  */
-static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd)
+static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
+			       bool no_default)
 {
 	int ret;
 
@@ -348,7 +350,7 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd)
 	data->last_cmd = cmd;
 	data->last_update = jiffies;
 
-	if (cmd == data->measure_iaq_cmd &&
+	if (no_default && cmd == data->measure_iaq_cmd &&
 	    !time_after(jiffies,
 			data->iaq_init_jiffies + data->iaq_init_skip_jiffies)) {
 		/* data contains default values */
@@ -390,7 +392,7 @@ static int sgp_iaq_threadfn(void *p)
 		expect_busy = !time_after(jiffies, data->iaq_init_jiffies +
 						   data->iaq_init_skip_jiffies);
 		next_update_jiffies = jiffies + data->measure_interval_jiffies;
-		ret = sgp_get_measurement(data, data->measure_iaq_cmd);
+		ret = sgp_get_measurement(data, data->measure_iaq_cmd, true);
 		if (ret && !(expect_busy && ret == -EBUSY)) {
 			dev_warn(&data->client->dev, "measurement error [%d]\n",
 				 ret);
@@ -450,7 +452,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			dev_warn(&data->client->dev,
 				 "IAQ potentially uninitialized\n");
 		}
-		ret = sgp_get_measurement(data, data->measure_iaq_cmd);
+		ret = sgp_get_measurement(data, data->measure_iaq_cmd, true);
 		if (ret)
 			goto unlock_fail;
 		words = data->buffer.raw_words;
@@ -474,7 +476,8 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 		break;
 	case IIO_CHAN_INFO_RAW:
 		mutex_lock(&data->data_lock);
-		ret = sgp_get_measurement(data, data->measure_signal_cmd);
+		ret = sgp_get_measurement(data, data->measure_signal_cmd,
+					  false);
 		if (ret)
 			goto unlock_fail;
 		words = data->buffer.raw_words;
