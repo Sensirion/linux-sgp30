@@ -522,7 +522,8 @@ static void sgp_restart_iaq_thread(struct sgp_data *data)
 		kthread_stop(data->iaq_thread);
 		data->iaq_thread = NULL;
 	}
-	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data, "sgp-iaq");
+	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
+				       "%s-iaq", data->client->name);
 	mutex_unlock(&data->data_lock);
 }
 
