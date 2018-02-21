@@ -391,13 +391,13 @@ static int sgp_iaq_threadfn(void *p)
 
 		expect_busy = !time_after(jiffies, data->iaq_init_jiffies +
 						   data->iaq_init_skip_jiffies);
-		next_update_jiffies = jiffies + data->measure_interval_jiffies;
 		ret = sgp_get_measurement(data, data->measure_iaq_cmd, true);
 		if (ret && !(expect_busy && ret == -EBUSY)) {
 			dev_warn(&data->client->dev, "measurement error [%d]\n",
 				 ret);
 		}
 unlock_sleep_continue:
+		next_update_jiffies = jiffies + data->measure_interval_jiffies;
 		mutex_unlock(&data->data_lock);
 
 		while (!time_after(jiffies, next_update_jiffies)) {
