@@ -334,12 +334,16 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 			       bool no_default)
 {
 	int ret;
+	/* data contains default values */
+	bool default_vals = no_default && cmd == data->measure_iaq_cmd &&
+			    !time_after(jiffies, data->iaq_init_jiffies +
+						 data->iaq_init_skip_jiffies);
 
 	/* Only measure if measure command changed or the data expired */
 	if (data->last_cmd == cmd &&
 	    !time_after(jiffies, data->last_update_jiffies +
 				 data->measure_interval_jiffies)) {
-		return 0;
+		return default_vals ? -EBUSY : 0;
 	}
 
 	ret = sgp_read_cmd(data, cmd, data->measurement_len,
@@ -350,13 +354,7 @@ static int sgp_get_measurement(struct sgp_data *data, enum sgp_cmd cmd,
 	data->last_cmd = cmd;
 	data->last_update_jiffies = jiffies;
 
-	if (no_default && cmd == data->measure_iaq_cmd &&
-	    !time_after(jiffies, data->iaq_init_jiffies +
-				 data->iaq_init_skip_jiffies)) {
-		/* data contains default values */
-		return -EBUSY;
-	}
-	return 0;
+	return default_vals ? -EBUSY : 0;
 }
 
 static int sgp_iaq_threadfn(void *p)
