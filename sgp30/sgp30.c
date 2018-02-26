@@ -135,6 +135,7 @@ struct sgp_data {
 	enum sgp_cmd measure_gas_signals_cmd;
 	u8 baseline_len;
 	u16 set_baseline[2];
+	u16 power_mode;
 	union sgp_reading buffer;
 	union sgp_reading iaq_buffer;
 	enum _iaq_buffer_state iaq_buffer_state;
@@ -673,8 +674,13 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 	else
 		return -EINVAL;
 
+	mutex_lock(&data->data_lock);
 	ret = sgp_write_cmd(data, SGPC3_CMD_SET_POWER_MODE,
 			    &power_mode, 1, SGP_CMD_DURATION_US);
+	if (ret == 0)
+		data->power_mode = power_mode;
+	mutex_unlock(&data->data_lock);
+
 	if (ret)
 		return ret;
 
@@ -938,6 +944,7 @@ static void sgp_init(struct sgp_data *data)
 		data->measure_gas_signals_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->product_id = SGPC3;
 		data->baseline_len = 1;
+		data->power_mode = SGPC3_POWER_MODE_LOW_POWER;
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 6) {
 			data->supports_humidity_compensation = true;
 			data->supports_power_mode = true;
