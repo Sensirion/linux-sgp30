@@ -677,6 +677,17 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 		return -EINVAL;
 
 	mutex_lock(&data->data_lock);
+	if (power_mode == data->power_mode) {
+		mutex_unlock(&data->data_lock);
+		return count;
+	}
+
+	/* Switching power mode invalidates any set baselines */
+	if (power_mode != data->power_mode) {
+		data->set_baseline[0] = 0;
+		data->set_baseline[1] = 0;
+	}
+
 	ret = sgp_write_cmd(data, SGPC3_CMD_SET_POWER_MODE,
 			    &power_mode, 1, SGP_CMD_DURATION_US);
 	if (ret == 0)
