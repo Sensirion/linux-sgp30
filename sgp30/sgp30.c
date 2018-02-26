@@ -588,6 +588,15 @@ static int sgpc3_iaq_init(struct sgp_data *data, u32 init_time)
 	data->iaq_init_duration_jiffies = init_time * HZ;
 	if (data->supports_power_mode) {
 		data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_CONTINUOUS;
+
+		if (data->power_mode == SGPC3_POWER_MODE_ULTRA_LOW_POWER) {
+			data->measure_interval_jiffies =
+				SGPC3_MEASURE_ULP_INTERVAL_HZ * HZ;
+		} else {
+			data->measure_interval_jiffies =
+				SGPC3_MEASURE_INTERVAL_HZ * HZ;
+		}
+
 		if (data->set_baseline[0])
 			skip_cycles = 1;
 		else if (data->power_mode == SGPC3_POWER_MODE_ULTRA_LOW_POWER)
