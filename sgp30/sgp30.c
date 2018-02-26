@@ -126,7 +126,7 @@ struct sgp_data {
 	unsigned long iaq_init_duration_jiffies;
 	unsigned long iaq_defval_skip_jiffies;
 	u64 serial_id;
-	u32 iaq_init_set_duration;
+	u32 iaq_init_user_duration;
 	u16 product_id;
 	u16 feature_set;
 	u16 measurement_len;
@@ -135,7 +135,7 @@ struct sgp_data {
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_gas_signals_cmd;
 	u8 baseline_len;
-	u16 set_baseline[2];
+	u16 user_baseline[2];
 	u16 power_mode;
 	union sgp_reading buffer;
 	union sgp_reading iaq_buffer;
@@ -424,9 +424,9 @@ static int sgp_iaq_threadfn(void *p)
 			if (ret < 0)
 				goto unlock_sleep_continue;
 			data->iaq_init_start_jiffies = jiffies;
-			if (data->set_baseline[0]) {
+			if (data->user_baseline[0]) {
 				ret = sgp_write_cmd(data, SGP_CMD_SET_BASELINE,
-						    data->set_baseline,
+						    data->user_baseline,
 						    data->baseline_len,
 						    SGP_CMD_DURATION_US);
 				if (ret < 0) {
@@ -586,7 +586,7 @@ static int sgpc3_iaq_init(struct sgp_data *data)
 {
 	int skip_cycles;
 
-	data->iaq_init_duration_jiffies = data->iaq_init_set_duration * HZ;
+	data->iaq_init_duration_jiffies = data->iaq_init_user_duration * HZ;
 	if (data->supports_power_mode) {
 		data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_CONTINUOUS;
 
@@ -598,14 +598,14 @@ static int sgpc3_iaq_init(struct sgp_data *data)
 				SGPC3_MEASURE_INTERVAL_HZ * HZ;
 		}
 
-		if (data->set_baseline[0])
+		if (data->user_baseline[0])
 			skip_cycles = 1;
 		else if (data->power_mode == SGPC3_POWER_MODE_ULTRA_LOW_POWER)
 			skip_cycles = 2;
 		else
 			skip_cycles = 11;
 	} else {
-		switch (data->iaq_init_set_duration) {
+		switch (data->iaq_init_user_duration) {
 		case 0:
 			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_0;
 			skip_cycles = 1;
@@ -625,7 +625,7 @@ static int sgpc3_iaq_init(struct sgp_data *data)
 		default:
 			return -EINVAL;
 		}
-		if (!data->set_baseline[0])
+		if (!data->user_baseline[0])
 			skip_cycles += 10;
 	}
 	data->iaq_defval_skip_jiffies = data->iaq_init_duration_jiffies +
@@ -643,8 +643,8 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	int ret;
 
 	mutex_lock(&data->data_lock);
-	data->set_baseline[0] = 0;
-	data->set_baseline[1] = 0;
+	data->user_baseline[0] = 0;
+	data->user_baseline[1] = 0;
 	if (data->product_id == SGPC3) {
 		ret = kstrtou32(buf, 10, &init_duration);
 		if (ret) {
@@ -652,11 +652,11 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 			goto unlock_fail;
 		}
 
-		old_duration = data->iaq_init_set_duration;
-		data->iaq_init_set_duration = init_duration;
+		old_duration = data->iaq_init_user_duration;
+		data->iaq_init_user_duration = init_duration;
 		ret = sgpc3_iaq_init(data);
 		if (ret) {
-			data->iaq_init_set_duration = old_duration;
+			data->iaq_init_user_duration = old_duration;
 			goto unlock_fail;
 		}
 	}
@@ -698,8 +698,8 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 
 	/* Switching power mode invalidates any set baselines */
 	if (power_mode != data->power_mode) {
-		data->set_baseline[0] = 0;
-		data->set_baseline[1] = 0;
+		data->user_baseline[0] = 0;
+		data->user_baseline[1] = 0;
 	}
 
 	ret = sgp_write_cmd(data, SGPC3_CMD_SET_POWER_MODE,
@@ -771,7 +771,7 @@ static int sgp_is_baseline_valid(struct sgp_data *data, u16 *baseline_words)
 		return ret;
 
 	mutex_lock(&data->data_lock);
-	if (data->set_baseline[0] ||
+	if (data->user_baseline[0] ||
 	    time_after(jiffies,
 		       data->iaq_init_start_jiffies + 60 * 60 * 12 * HZ)) {
 		ret = baseline_words[0] > 0;
@@ -784,9 +784,9 @@ static int sgp_is_baseline_valid(struct sgp_data *data, u16 *baseline_words)
 static void sgp_set_baseline(struct sgp_data *data, u16 *baseline_words)
 {
 	mutex_lock(&data->data_lock);
-	data->set_baseline[0] = baseline_words[0];
+	data->user_baseline[0] = baseline_words[0];
 	if (data->baseline_len == 2)
-		data->set_baseline[1] = baseline_words[1];
+		data->user_baseline[1] = baseline_words[1];
 	mutex_unlock(&data->data_lock);
 	sgp_restart_iaq_thread(data);
 }
@@ -952,10 +952,10 @@ static void sgp_init(struct sgp_data *data)
 	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
 	data->iaq_init_start_jiffies = 0;
 	data->iaq_init_duration_jiffies = 0;
-	data->iaq_init_set_duration = 0;
+	data->iaq_init_user_duration = 0;
 	data->iaq_buffer_state = IAQ_BUFFER_EMPTY;
-	data->set_baseline[0] = 0;
-	data->set_baseline[1] = 0;
+	data->user_baseline[0] = 0;
+	data->user_baseline[1] = 0;
 	switch (SGP_VERS_PRODUCT(data)) {
 	case SGP30:
 		data->measurement_len = SGP30_MEASUREMENT_LEN;
@@ -975,7 +975,7 @@ static void sgp_init(struct sgp_data *data)
 		data->product_id = SGPC3;
 		data->baseline_len = 1;
 		data->power_mode = SGPC3_POWER_MODE_LOW_POWER;
-		data->iaq_init_set_duration =
+		data->iaq_init_user_duration =
 			SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ;
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 6) {
 			data->supports_humidity_compensation = true;
