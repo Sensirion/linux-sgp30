@@ -580,9 +580,9 @@ static int sgpc3_iaq_init(struct sgp_data *data, u32 init_time)
 {
 	int skip_cycles;
 
+	data->iaq_init_duration_jiffies = init_time * HZ;
 	if (data->supports_power_mode) {
 		data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_CONTINUOUS;
-		data->iaq_init_duration_jiffies = init_time * HZ;
 		skip_cycles = (data->set_baseline[0] ? 1 : 2);
 	} else {
 		switch (init_time) {
@@ -623,9 +623,6 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 	int ret;
 
 	mutex_lock(&data->data_lock);
-	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
-	data->iaq_init_duration_jiffies = 0;
-	data->iaq_defval_skip_jiffies = 15 * HZ;
 	data->set_baseline[0] = 0;
 	data->set_baseline[1] = 0;
 	if (data->product_id == SGPC3) {
@@ -917,9 +914,8 @@ static int setup_and_check_sgp_data(struct sgp_data *data,
 		if (major == 0 && minor >= 6) {
 			data->supports_humidity_compensation = true;
 			data->supports_power_mode = true;
-			data->iaq_init_duration_jiffies =
-				SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ * HZ;
 		}
+		(void)sgpc3_iaq_init(data, SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ);
 		break;
 	default:
 		return -ENODEV;
