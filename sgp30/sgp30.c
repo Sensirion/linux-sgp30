@@ -480,8 +480,10 @@ static ssize_t sgp_absolute_humidity_store(struct device *dev,
 	if (ah > 0 && ah_scaled == 0)
 		ah_scaled = 1;
 
+	mutex_lock(&data->data_lock);
 	ret = sgp_write_cmd(data, SGP_CMD_SET_ABSOLUTE_HUMIDITY,
 			    &ah_scaled, 1, SGP_CMD_DURATION_US);
+	mutex_unlock(&data->data_lock);
 	if (ret)
 		return ret;
 
