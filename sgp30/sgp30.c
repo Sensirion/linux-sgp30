@@ -803,8 +803,12 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	measure_test = be16_to_cpu(data->buffer.raw_words[0].value);
 	mutex_unlock(&data->data_lock);
 
-	if (data->product_id == SGP30 && baseline_valid > 0)
-		sgp_set_baseline(data, baseline_words);
+	if (data->product_id == SGP30) {
+		if (baseline_valid > 0)
+			sgp_set_baseline(data, baseline_words);
+		else
+			sgp_restart_iaq_thread(data);
+	}
 
 	return sprintf(buf, "%s\n",
 		       measure_test ^ SGP_SELFTEST_OK ? "FAILED" : "OK");
