@@ -126,6 +126,7 @@ struct sgp_data {
 	unsigned long iaq_init_duration_jiffies;
 	unsigned long iaq_defval_skip_jiffies;
 	u64 serial_id;
+	u32 iaq_init_set_duration;
 	u16 product_id;
 	u16 feature_set;
 	u16 measurement_len;
@@ -581,11 +582,11 @@ static void sgp_restart_iaq_thread(struct sgp_data *data)
 	mutex_unlock(&data->data_lock);
 }
 
-static int sgpc3_iaq_init(struct sgp_data *data, u32 init_time)
+static int sgpc3_iaq_init(struct sgp_data *data)
 {
 	int skip_cycles;
 
-	data->iaq_init_duration_jiffies = init_time * HZ;
+	data->iaq_init_duration_jiffies = data->iaq_init_set_duration * HZ;
 	if (data->supports_power_mode) {
 		data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_CONTINUOUS;
 
@@ -604,7 +605,7 @@ static int sgpc3_iaq_init(struct sgp_data *data, u32 init_time)
 		else
 			skip_cycles = 11;
 	} else {
-		switch (init_time) {
+		switch (data->iaq_init_set_duration) {
 		case 0:
 			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_0;
 			skip_cycles = 1;
@@ -638,22 +639,26 @@ static ssize_t sgp_iaq_init_store(struct device *dev,
 				  const char *buf, size_t count)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
-	u32 init_time;
+	u32 init_duration, old_duration;
 	int ret;
 
 	mutex_lock(&data->data_lock);
 	data->set_baseline[0] = 0;
 	data->set_baseline[1] = 0;
 	if (data->product_id == SGPC3) {
-		ret = kstrtou32(buf, 10, &init_time);
+		ret = kstrtou32(buf, 10, &init_duration);
 		if (ret) {
 			ret = -EINVAL;
 			goto unlock_fail;
 		}
 
-		ret = sgpc3_iaq_init(data, init_time);
-		if (ret)
+		old_duration = data->iaq_init_set_duration;
+		data->iaq_init_set_duration = init_duration;
+		ret = sgpc3_iaq_init(data);
+		if (ret) {
+			data->iaq_init_set_duration = old_duration;
 			goto unlock_fail;
+		}
 	}
 	mutex_unlock(&data->data_lock);
 
@@ -699,8 +704,10 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 
 	ret = sgp_write_cmd(data, SGPC3_CMD_SET_POWER_MODE,
 			    &power_mode, 1, SGP_CMD_DURATION_US);
-	if (ret == 0)
+	if (ret == 0) {
 		data->power_mode = power_mode;
+		ret = sgpc3_iaq_init(data);
+	}
 	mutex_unlock(&data->data_lock);
 
 	if (ret)
@@ -945,6 +952,7 @@ static void sgp_init(struct sgp_data *data)
 	data->iaq_init_cmd = SGP_CMD_IAQ_INIT;
 	data->iaq_init_start_jiffies = 0;
 	data->iaq_init_duration_jiffies = 0;
+	data->iaq_init_set_duration = 0;
 	data->iaq_buffer_state = IAQ_BUFFER_EMPTY;
 	data->set_baseline[0] = 0;
 	data->set_baseline[1] = 0;
@@ -967,11 +975,13 @@ static void sgp_init(struct sgp_data *data)
 		data->product_id = SGPC3;
 		data->baseline_len = 1;
 		data->power_mode = SGPC3_POWER_MODE_LOW_POWER;
+		data->iaq_init_set_duration =
+			SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ;
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 6) {
 			data->supports_humidity_compensation = true;
 			data->supports_power_mode = true;
 		}
-		(void)sgpc3_iaq_init(data, SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ);
+		(void)sgpc3_iaq_init(data);
 		break;
 	};
 	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
