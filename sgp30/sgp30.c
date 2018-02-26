@@ -783,7 +783,7 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	/* Check if baseline format is correct */
 	if (ret != data->baseline_len) {
 		dev_err(&data->client->dev, "invalid baseline format\n");
-		return -EIO;
+		return -EINVAL;
 	}
 
 	sgp_set_baseline(data, words);
