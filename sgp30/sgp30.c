@@ -398,8 +398,8 @@ static int sgp_measure_iaq(struct sgp_data *data)
 	return 0;
 }
 
-static void sgp_iaq_thread_sleep(const struct sgp_data *data,
-				 unsigned long sleep_jiffies)
+static void sgp_iaq_thread_sleep_until(const struct sgp_data *data,
+				       unsigned long sleep_jiffies)
 {
 	const long IAQ_POLL = 50000;
 
@@ -438,9 +438,9 @@ static int sgp_iaq_threadfn(void *p)
 			}
 			if (data->iaq_init_duration_jiffies) {
 				mutex_unlock(&data->data_lock);
-				sgp_iaq_thread_sleep(data,
-						     data->iaq_init_start_jiffies +
-						     data->iaq_init_duration_jiffies);
+				sgp_iaq_thread_sleep_until(data,
+							   data->iaq_init_start_jiffies +
+							   data->iaq_init_duration_jiffies);
 				continue;
 			}
 		}
@@ -453,7 +453,7 @@ static int sgp_iaq_threadfn(void *p)
 unlock_sleep_continue:
 		next_update_jiffies = jiffies + data->measure_interval_jiffies;
 		mutex_unlock(&data->data_lock);
-		sgp_iaq_thread_sleep(data, next_update_jiffies);
+		sgp_iaq_thread_sleep_until(data, next_update_jiffies);
 	}
 	return 0;
 }
