@@ -398,8 +398,8 @@ static int sgp_measure_iaq(struct sgp_data *data)
 	return 0;
 }
 
-static void sgp_iaq_thread_sleep(const struct sgp_data *data,
-				 unsigned long sleep_jiffies)
+static void sgp_iaq_thread_sleep_until(const struct sgp_data *data,
+				       unsigned long sleep_jiffies)
 {
 	const long IAQ_POLL = 50000;
 
@@ -438,9 +438,9 @@ static int sgp_iaq_threadfn(void *p)
 			}
 			if (data->iaq_init_duration_jiffies) {
 				mutex_unlock(&data->data_lock);
-				sgp_iaq_thread_sleep(data,
-						     data->iaq_init_start_jiffies +
-						     data->iaq_init_duration_jiffies);
+				sgp_iaq_thread_sleep_until(data,
+							   data->iaq_init_start_jiffies +
+							   data->iaq_init_duration_jiffies);
 				continue;
 			}
 		}
@@ -453,7 +453,7 @@ static int sgp_iaq_threadfn(void *p)
 unlock_sleep_continue:
 		next_update_jiffies = jiffies + data->measure_interval_jiffies;
 		mutex_unlock(&data->data_lock);
-		sgp_iaq_thread_sleep(data, next_update_jiffies);
+		sgp_iaq_thread_sleep_until(data, next_update_jiffies);
 	}
 	return 0;
 }
@@ -634,35 +634,46 @@ static int sgpc3_iaq_init(struct sgp_data *data)
 	return 0;
 }
 
-static ssize_t sgp_iaq_init_store(struct device *dev,
-				  __attribute__((unused))struct device_attribute *attr,
-				  const char *buf, size_t count)
+static ssize_t sgp_iaq_preheat_store(struct device *dev,
+				     __attribute__((unused))struct device_attribute *attr,
+				     const char *buf, size_t count)
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
-	u32 init_duration, old_duration;
+	u32 init_duration;
 	int ret;
 
+	if (SGP_VERS_PRODUCT(data) != SGPC3)
+		return -EINVAL;
+
 	mutex_lock(&data->data_lock);
-	data->user_baseline[0] = 0;
-	data->user_baseline[1] = 0;
-	if (data->product_id == SGPC3) {
-		ret = kstrtou32(buf, 10, &init_duration);
-		if (ret) {
+	ret = kstrtou32(buf, 10, &init_duration);
+	if (ret) {
+		ret = -EINVAL;
+		goto unlock_fail;
+	}
+
+	if (data->supports_power_mode) {
+		if (init_duration > 300) {
 			ret = -EINVAL;
 			goto unlock_fail;
 		}
-
-		old_duration = data->iaq_init_user_duration;
-		data->iaq_init_user_duration = init_duration;
-		ret = sgpc3_iaq_init(data);
-		if (ret) {
-			data->iaq_init_user_duration = old_duration;
+	} else {
+		if (init_duration == 0) {
+		} else if (init_duration <= 16) {
+			init_duration = 16;
+		} else if (init_duration <= 64) {
+			init_duration = 64;
+		} else if (init_duration <= 184) {
+			init_duration = 184;
+		} else {
+			ret = -EINVAL;
 			goto unlock_fail;
 		}
 	}
+
+	data->iaq_init_user_duration = init_duration;
 	mutex_unlock(&data->data_lock);
 
-	sgp_restart_iaq_thread(data);
 	return count;
 
 unlock_fail:
@@ -992,7 +1003,7 @@ static IIO_DEVICE_ATTR(in_serial_id, 0444, sgp_serial_id_show, NULL, 0);
 static IIO_DEVICE_ATTR(in_feature_set_version, 0444,
 		       sgp_feature_set_version_show, NULL, 0);
 static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
-static IIO_DEVICE_ATTR(do_iaq_init, 0220, NULL, sgp_iaq_init_store, 0);
+static IIO_DEVICE_ATTR(set_iaq_preheat_seconds, 0220, NULL, sgp_iaq_preheat_store, 0);
 static IIO_DEVICE_ATTR(in_iaq_baseline, 0444, sgp_iaq_baseline_show, NULL, 0);
 static IIO_DEVICE_ATTR(set_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
 static IIO_DEVICE_ATTR(set_absolute_humidity, 0220, NULL,
@@ -1004,9 +1015,9 @@ static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_serial_id.dev_attr.attr,
 	&iio_dev_attr_in_feature_set_version.dev_attr.attr,
 	&iio_dev_attr_in_selftest.dev_attr.attr,
-	&iio_dev_attr_do_iaq_init.dev_attr.attr,
 	&iio_dev_attr_in_iaq_baseline.dev_attr.attr,
 	&iio_dev_attr_set_iaq_baseline.dev_attr.attr,
+	&iio_dev_attr_set_iaq_preheat_seconds.dev_attr.attr,
 	&iio_dev_attr_set_absolute_humidity.dev_attr.attr,
 	&iio_dev_attr_set_power_mode.dev_attr.attr,
 	NULL
