@@ -42,8 +42,8 @@
 #define SGP_SELFTEST_DURATION_US		220000
 #define SGP_CMD_HANDLING_DURATION_US		10000
 #define SGP_CMD_LEN				SGP_WORD_LEN
-#define SGP30_MEASUREMENT_LEN			2
-#define SGPC3_MEASUREMENT_LEN			2
+#define SGP_CMD_MAX_BUF_SIZE			(SGP_CMD_LEN + 2 * SGP_WORD_LEN)
+#define SGP_MEASUREMENT_LEN			2
 #define SGP30_MEASURE_INTERVAL_HZ		1
 #define SGPC3_MEASURE_INTERVAL_HZ		2
 #define SGPC3_MEASURE_ULP_INTERVAL_HZ		30
@@ -61,7 +61,7 @@ DECLARE_CRC8_TABLE(sgp_crc8_table);
 
 enum sgp_product_id {
 	SGP30 = 0,
-	SGPC3
+	SGPC3,
 };
 
 enum sgp30_channel_idx {
@@ -115,7 +115,7 @@ union sgp_reading {
 enum _iaq_buffer_state {
 	IAQ_BUFFER_EMPTY = 0,
 	IAQ_BUFFER_DEFAULT_VALS,
-	IAQ_BUFFER_VALID
+	IAQ_BUFFER_VALID,
 };
 
 struct sgp_data {
@@ -129,7 +129,6 @@ struct sgp_data {
 	u32 iaq_init_user_duration;
 	u16 product_id;
 	u16 feature_set;
-	u16 measurement_len;
 	unsigned long measure_interval_jiffies;
 	enum sgp_cmd iaq_init_cmd;
 	enum sgp_cmd measure_iaq_cmd;
@@ -153,14 +152,14 @@ static const struct sgp_version supported_versions_sgp30[] = {
 	{
 		.major = 1,
 		.minor = 0,
-	}
+	},
 };
 
 static const struct sgp_version supported_versions_sgpc3[] = {
 	{
 		.major = 0,
 		.minor = 4,
-	}
+	},
 };
 
 static const struct iio_chan_spec sgp30_channels[] = {
@@ -168,7 +167,6 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.type = IIO_CONCENTRATION,
 		.channel2 = IIO_MOD_VOC,
 		.datasheet_name = "TVOC signal",
-		.scan_index = 0,
 		.modified = 1,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
 		.address = SGP30_IAQ_TVOC_IDX,
@@ -177,7 +175,6 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.type = IIO_CONCENTRATION,
 		.channel2 = IIO_MOD_CO2,
 		.datasheet_name = "CO2eq signal",
-		.scan_index = 1,
 		.modified = 1,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
 		.address = SGP30_IAQ_CO2EQ_IDX,
@@ -189,7 +186,6 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.address = SGP30_SIG_ETOH_IDX,
 		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
-		.scan_index = 2,
 		.scan_type = {
 			.endianness = IIO_BE,
 		},
@@ -201,7 +197,6 @@ static const struct iio_chan_spec sgp30_channels[] = {
 		.address = SGP30_SIG_H2_IDX,
 		.extend_name = "h2",
 		.datasheet_name = "H2 signal",
-		.scan_index = 3,
 		.scan_type = {
 			.endianness = IIO_BE,
 		},
@@ -213,7 +208,6 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 		.type = IIO_CONCENTRATION,
 		.channel2 = IIO_MOD_VOC,
 		.datasheet_name = "TVOC signal",
-		.scan_index = 0,
 		.modified = 1,
 		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
 		.address = SGPC3_IAQ_TVOC_IDX,
@@ -225,14 +219,13 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 		.address = SGPC3_SIG_ETOH_IDX,
 		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
-		.scan_index = 1,
 		.scan_type = {
 			.endianness = IIO_BE,
 		},
 	},
 };
 
-static struct sgp_device sgp_devices[] = {
+static const struct sgp_device sgp_devices[] = {
 	[SGP30] = {
 		.channels = sgp30_channels,
 		.num_channels = ARRAY_SIZE(sgp30_channels),
@@ -301,13 +294,11 @@ static int sgp_read_cmd(struct sgp_data *data, enum sgp_cmd cmd,
 	data_buf = &buf->start;
 	ret = i2c_master_recv(client, data_buf, size);
 	if (ret < 0)
-		ret = -EBUSY;
-	else if (ret != size)
-		ret = -EIO;
-	else
-		ret = sgp_verify_buffer(data, buf, word_count);
+		return ret;
+	if (ret != size)
+		return -EIO;
 
-	return ret;
+	return sgp_verify_buffer(data, buf, word_count);
 }
 
 /**
@@ -323,24 +314,22 @@ static int sgp_write_cmd(struct sgp_data *data, enum sgp_cmd cmd, u16 *buf,
 			 size_t buf_size, unsigned long duration_us)
 {
 	int ret, ix;
-	u16 buf_idx = 0;
-	u16 buffer_size = SGP_CMD_LEN + buf_size *
-		(SGP_WORD_LEN + SGP_CRC8_LEN);
-	u8 buffer[buffer_size];
+	u16 buf_idx;
+	u8 buffer[SGP_CMD_MAX_BUF_SIZE];
 
 	/* assemble buffer */
-	*((u16 *)&buffer[0]) = cmd;
-	buf_idx += SGP_CMD_LEN;
+	*((__be16 *)&buffer[0]) = cmd;
+	buf_idx = SGP_CMD_LEN;
 	for (ix = 0; ix < buf_size; ix++) {
-		*((u16 *)&buffer[buf_idx]) = ntohs(buf[ix] & 0xffff);
+		*((__be16 *)&buffer[buf_idx]) = cpu_to_be16(buf[ix]);
 		buf_idx += SGP_WORD_LEN;
 		buffer[buf_idx] = crc8(sgp_crc8_table,
 				       &buffer[buf_idx - SGP_WORD_LEN],
 				       SGP_WORD_LEN, SGP_CRC8_INIT);
 		buf_idx += SGP_CRC8_LEN;
 	}
-	ret = i2c_master_send(data->client, buffer, buffer_size);
-	if (ret != buffer_size)
+	ret = i2c_master_send(data->client, buffer, buf_idx);
+	if (ret != buf_idx)
 		return -EIO;
 	ret = 0;
 	usleep_range(duration_us, duration_us + 1000);
@@ -360,7 +349,7 @@ static int sgp_measure_gas_signals(struct sgp_data *data)
 {
 	int ret;
 	ret = sgp_read_cmd(data, data->measure_gas_signals_cmd,
-			   &data->buffer, data->measurement_len,
+			   &data->buffer, SGP_MEASUREMENT_LEN,
 			   SGP_MEASUREMENT_DURATION_US);
 	if (ret < 0)
 		return ret;
@@ -385,7 +374,7 @@ static int sgp_measure_iaq(struct sgp_data *data)
 						 data->iaq_defval_skip_jiffies);
 
 	ret = sgp_read_cmd(data, data->measure_iaq_cmd, &data->iaq_buffer,
-			   data->measurement_len, SGP_MEASUREMENT_DURATION_US);
+			   SGP_MEASUREMENT_LEN, SGP_MEASUREMENT_DURATION_US);
 	if (ret < 0)
 		return ret;
 
@@ -503,8 +492,8 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 	case IIO_CHAN_INFO_PROCESSED:
 		mutex_lock(&data->data_lock);
 		if (data->iaq_buffer_state != IAQ_BUFFER_VALID) {
-			ret = -EBUSY;
-			goto unlock_fail;
+			mutex_unlock(&data->data_lock);
+			return -EBUSY;
 		}
 		words = data->iaq_buffer.raw_words;
 		switch (chan->address) {
@@ -537,8 +526,10 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			ret = sgp_measure_gas_signals(data);
 			words = data->buffer.raw_words;
 		}
-		if (ret)
-			goto unlock_fail;
+		if (ret) {
+			mutex_unlock(&data->data_lock);
+			return ret;
+		}
 
 		switch (chan->address) {
 		case SGP30_SIG_ETOH_IDX:
@@ -551,7 +542,6 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			ret = IIO_VAL_INT;
 			break;
 		}
-unlock_fail:
 		mutex_unlock(&data->data_lock);
 		break;
 	case IIO_CHAN_INFO_SCALE:
@@ -561,15 +551,12 @@ unlock_fail:
 		case SGP30_SIG_H2_IDX:
 			*val = 0;
 			*val2 = 1953125;
-			ret = IIO_VAL_INT_PLUS_NANO;
-			break;
+			return IIO_VAL_INT_PLUS_NANO;
 		default:
-			ret = -EINVAL;
-			break;
+			return -EINVAL;
 		}
-		break;
 	default:
-		ret = -EINVAL;
+		return -EINVAL;
 	}
 	return ret;
 }
@@ -745,6 +732,9 @@ static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 		baseline_words[ix] = baseline_word;
 	}
 
+    if (!baseline_words[0])
+        ret = -EBUSY;
+
 unlock_fail:
 	mutex_unlock(&data->data_lock);
 	return ret;
@@ -772,8 +762,8 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
  * @baseline:   sensor's current baseline
  *
  * Return:      1 if the baseline was set manually or the sensor has been
- *              operating for at least 12h, 0 if the baseline is not yet valid,
- *              a negative error otherwise.
+ *              operating for at least 12h, -EBUSY if the baseline is not yet
+ *              valid, another negative error otherwise.
  */
 static int sgp_is_baseline_valid(struct sgp_data *data, u16 *baseline_words)
 {
@@ -782,11 +772,9 @@ static int sgp_is_baseline_valid(struct sgp_data *data, u16 *baseline_words)
 		return ret;
 
 	mutex_lock(&data->data_lock);
-	if (data->user_baseline[0] ||
-	    time_after(jiffies,
-		       data->iaq_init_start_jiffies + 60 * 60 * 12 * HZ)) {
-		ret = baseline_words[0] > 0;
-	}
+	ret = (data->user_baseline[0] ||
+	       time_after(jiffies,
+		          data->iaq_init_start_jiffies + 60 * 60 * 12 * HZ));
 	mutex_unlock(&data->data_lock);
 
 	return ret;
@@ -811,14 +799,12 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	u16 words[2];
 	int ret = 0;
 
-	/* 1 word (4 chars) per signal */
 	if (count - newline == (data->baseline_len * 4)) {
 		if (data->baseline_len == 1)
 			ret = sscanf(buf, "%04hx", &words[0]);
 		ret = sscanf(buf, "%04hx%04hx", &words[0], &words[1]);
 	}
 
-	/* Check if baseline format is correct */
 	if (ret != data->baseline_len) {
 		dev_err(&data->client->dev, "invalid baseline format\n");
 		return -EINVAL;
@@ -839,16 +825,17 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	int ret;
 
 	if (data->product_id == SGP30) {
-		/* On the SGP30, the self-test interferes with the
-		 * IAQ initialization timer */
+		/* On the SGP30, the self-test interferes with iaq_init */
 		baseline_valid = sgp_is_baseline_valid(data, baseline_words);
 	}
 
 	mutex_lock(&data->data_lock);
 	ret = sgp_read_cmd(data, SGP_CMD_SELFTEST, &data->buffer,
 			   1, SGP_SELFTEST_DURATION_US);
-	if (ret != 0)
-		goto unlock_fail;
+	if (ret < 0) {
+		mutex_unlock(&data->data_lock);
+		return ret;
+	}
 
 	measure_test = be16_to_cpu(data->buffer.raw_words[0].value);
 	mutex_unlock(&data->data_lock);
@@ -862,10 +849,6 @@ static ssize_t sgp_selftest_show(struct device *dev,
 
 	return sprintf(buf, "%s\n",
 		       measure_test ^ SGP_SELFTEST_OK ? "FAILED" : "OK");
-
-unlock_fail:
-	mutex_unlock(&data->data_lock);
-	return ret;
 }
 
 static ssize_t sgp_serial_id_show(struct device *dev,
@@ -895,7 +878,7 @@ static int sgp_get_serial_id(struct sgp_data *data)
 	mutex_lock(&data->data_lock);
 	ret = sgp_read_cmd(data, SGP_CMD_GET_SERIAL_ID, &data->buffer, 3,
 			   SGP_CMD_DURATION_US);
-	if (ret != 0)
+	if (ret < 0)
 		goto unlock_fail;
 
 	words = data->buffer.raw_words;
@@ -925,12 +908,12 @@ static int sgp_check_compat(struct sgp_data *data,
 			product);
 		return -ENODEV;
 	}
-	if (reserved != 0) {
+	if (reserved) {
 		dev_warn(&data->client->dev, "reserved bits set: 0x%04hx\n",
 			 reserved);
 	}
-	/* engineering samples are not supported */
-	if (SGP_VERS_ENG_BIT(data) != 0)
+	/* engineering samples are not supported: no interface guarantees */
+	if (SGP_VERS_ENG_BIT(data))
 		return -ENODEV;
 
 	switch (product) {
@@ -969,7 +952,6 @@ static void sgp_init(struct sgp_data *data)
 	data->user_baseline[1] = 0;
 	switch (SGP_VERS_PRODUCT(data)) {
 	case SGP30:
-		data->measurement_len = SGP30_MEASUREMENT_LEN;
 		data->measure_interval_jiffies = SGP30_MEASURE_INTERVAL_HZ * HZ;
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_gas_signals_cmd = SGP30_CMD_MEASURE_SIGNAL;
@@ -979,7 +961,6 @@ static void sgp_init(struct sgp_data *data)
 		data->iaq_defval_skip_jiffies = 15 * HZ;
 		break;
 	case SGPC3:
-		data->measurement_len = SGPC3_MEASUREMENT_LEN;
 		data->measure_interval_jiffies = SGPC3_MEASURE_INTERVAL_HZ * HZ;
 		data->measure_iaq_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->measure_gas_signals_cmd = SGPC3_CMD_MEASURE_RAW;
@@ -1046,7 +1027,7 @@ static int sgp_probe(struct i2c_client *client,
 {
 	struct iio_dev *indio_dev;
 	struct sgp_data *data;
-	struct sgp_device *chip;
+	const struct sgp_device *chip;
 	const struct of_device_id *of_id;
 	unsigned long product_id;
 	int ret;
@@ -1056,10 +1037,10 @@ static int sgp_probe(struct i2c_client *client,
 		return -ENOMEM;
 
 	of_id = of_match_device(sgp_dt_ids, &client->dev);
-	if (!of_id)
-		product_id = id->driver_data;
-	else
+	if (of_id)
 		product_id = (unsigned long)of_id->data;
+	else
+		product_id = id->driver_data;
 
 	chip = &sgp_devices[product_id];
 	data = iio_priv(indio_dev);
@@ -1070,19 +1051,19 @@ static int sgp_probe(struct i2c_client *client,
 
 	/* get serial id and write it to client data */
 	ret = sgp_get_serial_id(data);
-	if (ret != 0)
+	if (ret < 0)
 		return ret;
 
 	/* get feature set version and write it to client data */
 	ret = sgp_read_cmd(data, SGP_CMD_GET_FEATURE_SET, &data->buffer, 1,
 			   SGP_CMD_DURATION_US);
-	if (ret != 0)
+	if (ret < 0)
 		return ret;
 
 	data->feature_set = be16_to_cpu(data->buffer.raw_words[0].value);
 
 	ret = sgp_check_compat(data, product_id);
-	if (ret != 0)
+	if (ret)
 		return ret;
 
 	indio_dev->dev.parent = &client->dev;
@@ -1096,15 +1077,10 @@ static int sgp_probe(struct i2c_client *client,
 	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (ret) {
 		dev_err(&client->dev, "failed to register iio device\n");
-		goto fail_free;
+		return ret;
 	}
 
 	sgp_init(data);
-	return ret;
-
-fail_free:
-	mutex_destroy(&data->data_lock);
-	iio_device_free(indio_dev);
 	return ret;
 }
 
@@ -1115,7 +1091,6 @@ static int sgp_remove(struct i2c_client *client)
 
 	if (data->iaq_thread)
 		kthread_stop(data->iaq_thread);
-	devm_iio_device_unregister(&client->dev, indio_dev);
 	return 0;
 }
 
