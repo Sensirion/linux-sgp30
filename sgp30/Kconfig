@@ -9,7 +9,7 @@ config SENSIRION_SGP30
 	  Say Y here to build I2C interface support for the following
 	  Sensirion SGP gas sensors:
 	    * SGP30 gas sensor
-	    * SGPC3 gas sensor
+	    * SGPC3 low power gas sensor
 
 	  Also select IIO_BUFFER to enable triggered buffers.
 

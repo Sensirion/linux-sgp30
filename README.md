@@ -30,7 +30,7 @@ With support for triggered buffers:
 ### Local Machine
 
 Compiling for your local machine is useful to test if the driver compiles
-correctly. For that we need the kernel headers and build tools.
+correctly. Prerequisites are the kernel headers and build tools.
 
 ```bash
 # Install dependencies
