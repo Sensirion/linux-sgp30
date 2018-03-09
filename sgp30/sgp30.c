@@ -126,6 +126,7 @@ struct sgp_data {
 	unsigned long iaq_init_duration_jiffies;
 	unsigned long iaq_defval_skip_jiffies;
 	u64 serial_id;
+	void (*iaq_init_fn)(struct sgp_data *);
 	u32 iaq_init_user_duration;
 	u16 product_id;
 	u16 feature_set;
@@ -408,6 +409,8 @@ static int sgp_iaq_threadfn(void *p)
 	while(!kthread_should_stop()) {
 		mutex_lock(&data->data_lock);
 		if (data->iaq_init_start_jiffies == 0) {
+			if (data->iaq_init_fn)
+				data->iaq_init_fn(data);
 			ret = sgp_read_cmd(data, data->iaq_init_cmd, NULL, 0,
 					   SGP_CMD_DURATION_US);
 			if (ret < 0)
@@ -569,7 +572,7 @@ static void sgp_restart_iaq_thread(struct sgp_data *data)
 	mutex_unlock(&data->data_lock);
 }
 
-static int sgpc3_iaq_init(struct sgp_data *data)
+static void sgpc3_iaq_init(struct sgp_data *data)
 {
 	int skip_cycles;
 
@@ -610,7 +613,9 @@ static int sgpc3_iaq_init(struct sgp_data *data)
 			skip_cycles = 93;
 			break;
 		default:
-			return -EINVAL;
+			data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_64;
+			skip_cycles = 33;
+			break;
 		}
 		if (!data->user_baseline[0])
 			skip_cycles += 10;
@@ -618,7 +623,6 @@ static int sgpc3_iaq_init(struct sgp_data *data)
 	data->iaq_defval_skip_jiffies = data->iaq_init_duration_jiffies +
 					(skip_cycles *
 					 data->measure_interval_jiffies);
-	return 0;
 }
 
 static ssize_t sgp_iaq_preheat_store(struct device *dev,
@@ -702,14 +706,12 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 
 	ret = sgp_write_cmd(data, SGPC3_CMD_SET_POWER_MODE,
 			    &power_mode, 1, SGP_CMD_DURATION_US);
-	if (ret == 0) {
-		data->power_mode = power_mode;
-		ret = sgpc3_iaq_init(data);
-	}
-	mutex_unlock(&data->data_lock);
-
-	if (ret)
+	if (ret) {
+		mutex_unlock(&data->data_lock);
 		return ret;
+	}
+	data->power_mode = power_mode;
+	mutex_unlock(&data->data_lock);
 
 	sgp_restart_iaq_thread(data);
 	return count;
@@ -947,6 +949,7 @@ static void sgp_init(struct sgp_data *data)
 	data->iaq_init_start_jiffies = 0;
 	data->iaq_init_duration_jiffies = 0;
 	data->iaq_init_user_duration = 0;
+	data->iaq_init_fn = NULL;
 	data->iaq_buffer_state = IAQ_BUFFER_EMPTY;
 	data->user_baseline[0] = 0;
 	data->user_baseline[1] = 0;
@@ -973,7 +976,7 @@ static void sgp_init(struct sgp_data *data)
 			data->supports_humidity_compensation = true;
 			data->supports_power_mode = true;
 		}
-		(void)sgpc3_iaq_init(data);
+		data->iaq_init_fn = &sgpc3_iaq_init;
 		break;
 	};
 	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
