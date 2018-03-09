@@ -7,8 +7,6 @@ export CONFIG_SENSIRION_SGP30="m"
 MODNAME = sgp30
 CONFIG_CRC8 ?= $(CONFIG_SENSIRION_SGP30)
 CONFIG_IIO ?= $(CONFIG_SENSIRION_SGP30)
-CONFIG_IIO_BUFFER ?= "y"
-CONFIG_IIO_TRIGGERED_BUFFER ?= $(CONFIG_SENSIRION_SGP30)
 
 MODSRC = $(MODNAME)_src
 MODOBJ = $(MODNAME)_obj
@@ -26,8 +24,6 @@ prepare:
 	cd $(KERNELDIR) && \
 	echo "CONFIG_CRC8=$(CONFIG_CRC8)" >> .config && \
 	echo "CONFIG_IIO=$(CONFIG_IIO)" >> .config && \
-	echo "CONFIG_IIO_BUFFER=$(CONFIG_IIO_BUFFER)" >> .config && \
-	echo "CONFIG_IIO_TRIGGERED_BUFFER=$(CONFIG_IIO_TRIGGERED_BUFFER)" >> .config && \
 	make modules_prepare; \
 	cd -
 

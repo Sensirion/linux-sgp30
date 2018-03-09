@@ -4,76 +4,49 @@ sgp30: Industrial IO driver for Sensirion I2C Multi-Pixel Gas Sensors
 
 The sgp30 driver supports the Sensirion SGP30 and SGPC3 multi-pixel gas sensors.
 
-Datasheets:
-https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGP30_Datasheet_EN.pdf
-https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9_Gas_Sensors/Sensirion_Gas_Sensors_SGPC3_Datasheet_EN.pdf
-
 2. Modes of Operation
 
-2.1. Driver Instantiation
+Postprocessed Indoor Air Quality (IAQ) gas concentrations as well as raw gas
+signals are available. Both signals can be humidity-compensated by the sensor.
 
-The sgp30 driver must be instantiated on the corresponding i2c bus with the
-product name (sgp30 or sgpc3) and i2c address (0x58).
-
-Example instantiation of an sgp30 on i2c bus 1 (i2c-1):
-
-    $ echo sgp30 0x58 | sudo tee /sys/bus/i2c/devices/i2c-1/new_device
-
-Using the wrong product name results in an instantiation error. Check dmesg.
-
-2.2. Indoor Air Quality (IAQ) concentrations
+2.1. IAQ Gas Concentrations
 
 * tVOC (in_concentration_voc_input) at ppb precision (1e-9)
 * CO2eq (in_concentration_co2_input) at ppm precision (1e-6) -- SGP30 only
 
-2.2.1. IAQ Initialization
+2.1.1. IAQ Initialization
 Before Indoor Air Quality (IAQ) values can be read, the IAQ mode must be
-initialized by writing a non-empty value to out_iaq_init:
-
-    $ echo init > out_iaq_init
+initialized by sending the "iaq_init" command from the data sheet to the sensor.
+The sgp30 driver performs this initialization automatically on instantiation.
 
 After initializing IAQ, at least one IAQ signal must be read out every second
 (SGP30) / every two seconds (SGPC3) for the sensor to correctly maintain its
-internal baseline:
+internal baseline. The driver continuously performs this task in a background
+thread and caches the latest measurement for retrieval.
 
-    SGP30:
-    $ watch -n1 cat in_concentration_voc_input
+For the first 15s of operation after "iaq_init", default values are returned by
+the sensor. Default values are not returned by the driver, instead an -EBUSY
+error is returned.
 
-    SGPC3:
-    $ watch -n2 cat in_concentration_voc_input
+2.1.2. Pausing and Resuming IAQ
 
-For the first 15s of operation after writing to out_iaq_init, default values are
-returned by the sensor.
-
-2.2.2. Pausing and Resuming IAQ
-
-For best performance and faster startup times, the baseline should be saved
-once every hour, after 12h of operation. The baseline is restored by writing a
-non-empty value to out_iaq_init, followed by writing an unmodified retrieved
-baseline value from in_iaq_baseline to out_iaq_baseline.
+For best performance and faster subsequent startup times, the baseline should be
+saved once every hour, after 12h of operation. The baseline is restored by
+writing the last known baseline back to set_iaq_baseline.
 
     Saving the baseline:
     $ baseline=$(cat in_iaq_baseline)
 
     Restoring the baseline:
-    $ echo init > out_iaq_init
-    $ echo -n $baseline > out_iaq_baseline
+    $ echo -n $baseline > set_iaq_baseline
 
-2.3. Gas Concentration Signals
+2.2. Humidity Compensation
 
-* Ethanol (in_concentration_ethanol_raw)
-* H2 (in_concentration_h2_raw) -- SGP30 only
-
-The gas signals in_concentration_ethanol_raw and in_concentration_h2_raw may be
-used without prior write to out_iaq_init.
-
-2.4. Humidity Compensation (SGP30)
-
-The SGP30 features an on-chip humidity compensation that requires the
-(in-device) environment's absolute humidity.
+The SGP features an on-chip humidity compensation that requires the (in-device)
+environment's absolute humidity.
 
 Set the absolute humidity by writing the absolute humidity concentration (in
-mg/m^3) to out_concentration_ah_raw. The absolute humidity is obtained by
+mg/m^3) to set_absolute_humidity. The absolute humidity is obtained by
 converting the relative humidity and temperature. The following units are used:
 AH in mg/m^3, RH in percent (0..100), T in degrees Celsius, and exp() being the
 base-e exponential function.
@@ -84,29 +57,25 @@ base-e exponential function.
   AH = 216.7 * ------------------------------- * 1000
                         273.15 + T
 
-Writing a value of 0 to out_absolute_humidity disables the humidity
-compensation.
+Writing a value of 0 to set_absolute_humidity disables the humidity
+compensation. Devices not supporting humidity compensation (SGPC3 with feature
+set < 0.6) will report an error (-EINVAL) when setting the humidity.
 
-2.5. On-chip self test
+2.3. On-chip self test
 
     $ cat in_selftest
 
 in_selftest returns OK or FAILED.
 
-The self test interferes with IAQ operations. If needed, first save the current
-baseline, then restore it after the self test:
+On the SGP30, self test interferes with IAQ operations and requires a
+re-initialization thereof. If a valid baseline is available (after 12h of
+operation), the driver will take care of resuming the operation after the
+selftest, otherwise the "iaq_init" procedure will be restarted.
 
-    $ baseline=$(cat in_iaq_baseline)
-    $ cat in_selftest
-    $ echo init > out_iaq_init
-    $ echo -n $baseline > out_iaq_baseline
+2.4 Ultra Low Power Mode (SGPC3 Feature Set 0.6+)
 
-If the sensor's current operating duration is less than 12h the baseline should
-not be restored by skipping the last step.
-
-3. Sensor Interface
-
-    $ cat in_feature_set_version
-
-The SGP sensors' minor interface (feature set) version guarantees interface
-stability: a sensor with feature set 1.1 works with a driver for feature set 1.0
+The low-power SGPC3 features an ultra-low-power mode in which the sensor is only
+polled every 30s instead of every 2s. The polling interval in the background
+thread is adjusted by the driver when changing the power mode with
+set_power_mode. Supported options: {"low", "ultra-low"}. Changing the power mode
+on sensors without power-mode switching results in an -EINVAL error.

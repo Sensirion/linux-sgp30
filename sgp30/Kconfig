@@ -4,14 +4,11 @@ config SENSIRION_SGP30
 	tristate "Sensirion SGP gas sensors"
 	depends on I2C
 	select CRC8
-	select IIO_TRIGGERED_BUFFER if (IIO_BUFFER)
 	help
 	  Say Y here to build I2C interface support for the following
 	  Sensirion SGP gas sensors:
 	    * SGP30 gas sensor
-	    * SGPC3 gas sensor
-
-	  Also select IIO_BUFFER to enable triggered buffers.
+	    * SGPC3 low power gas sensor
 
 	  To compile this driver as module, choose M here: the
 	  module will be called sgp30.
