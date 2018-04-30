@@ -183,7 +183,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 	{
 		.type = IIO_CONCENTRATION,
 		.info_mask_separate =
-			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
+			BIT(IIO_CHAN_INFO_RAW),
 		.address = SGP30_SIG_ETOH_IDX,
 		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
@@ -194,7 +194,7 @@ static const struct iio_chan_spec sgp30_channels[] = {
 	{
 		.type = IIO_CONCENTRATION,
 		.info_mask_separate =
-			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
+			BIT(IIO_CHAN_INFO_RAW),
 		.address = SGP30_SIG_H2_IDX,
 		.extend_name = "h2",
 		.datasheet_name = "H2 signal",
@@ -216,7 +216,7 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 	{
 		.type = IIO_CONCENTRATION,
 		.info_mask_separate =
-			BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
+			BIT(IIO_CHAN_INFO_RAW),
 		.address = SGPC3_SIG_ETOH_IDX,
 		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
@@ -530,17 +530,6 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 		}
 		mutex_unlock(&data->data_lock);
 		break;
-	case IIO_CHAN_INFO_SCALE:
-		switch (chan->address) {
-		case SGP30_SIG_ETOH_IDX:
-		case SGPC3_SIG_ETOH_IDX:
-		case SGP30_SIG_H2_IDX:
-			*val = 0;
-			*val2 = 1953125;
-			return IIO_VAL_INT_PLUS_NANO;
-		default:
-			return -EINVAL;
-		}
 	default:
 		return -EINVAL;
 	}
