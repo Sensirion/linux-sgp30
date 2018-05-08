@@ -1015,7 +1015,6 @@ static int sgp_probe(struct i2c_client *client,
 {
 	struct iio_dev *indio_dev;
 	struct sgp_data *data;
-	const struct sgp_device *chip;
 	const struct of_device_id *of_id;
 	unsigned long product_id;
 	int ret;
@@ -1030,7 +1029,6 @@ static int sgp_probe(struct i2c_client *client,
 	else
 		product_id = id->driver_data;
 
-	chip = &sgp_devices[product_id];
 	data = iio_priv(indio_dev);
 	i2c_set_clientdata(client, indio_dev);
 	data->client = client;
@@ -1059,8 +1057,8 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->name = id->name;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
-	indio_dev->channels = chip->channels;
-	indio_dev->num_channels = chip->num_channels;
+	indio_dev->channels = sgp_devices[product_id].channels;
+	indio_dev->num_channels = sgp_devices[product_id].num_channels;
 
 	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (ret) {
