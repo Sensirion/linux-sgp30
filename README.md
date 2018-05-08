@@ -10,6 +10,7 @@ The config options must be listed in `.config` (e.g. selected with
 
 Minimal driver requirements:
 
+* `CONFIG_CRC8`
 * `CONFIG_IIO`
 
 ## Directory Structure

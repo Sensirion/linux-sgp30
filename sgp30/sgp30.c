@@ -182,10 +182,15 @@ static const struct iio_chan_spec sgp30_channels[] = {
 	},
 	{
 		.type = IIO_CONCENTRATION,
+#ifdef IIO_MOD_ETHANOL
+		.channel2 = IIO_MOD_ETHANOL,
+		.modified = 1,
+#else /* IIO_MOD_ETHANOL */
+		.extend_name = "ethanol",
+#endif /* IIO_MOD_ETHANOL */
 		.info_mask_separate =
 			BIT(IIO_CHAN_INFO_RAW),
 		.address = SGP30_SIG_ETOH_IDX,
-		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
 		.scan_type = {
 			.endianness = IIO_BE,
@@ -193,10 +198,15 @@ static const struct iio_chan_spec sgp30_channels[] = {
 	},
 	{
 		.type = IIO_CONCENTRATION,
+#ifdef IIO_MOD_H2
+		.channel2 = IIO_MOD_H2,
+		.modified = 1,
+#else /* IIO_MOD_H2 */
+		.extend_name = "h2",
+#endif /* IIO_MOD_H2 */
 		.info_mask_separate =
 			BIT(IIO_CHAN_INFO_RAW),
 		.address = SGP30_SIG_H2_IDX,
-		.extend_name = "h2",
 		.datasheet_name = "H2 signal",
 		.scan_type = {
 			.endianness = IIO_BE,
@@ -215,10 +225,15 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 	},
 	{
 		.type = IIO_CONCENTRATION,
+#ifdef IIO_MOD_ETHANOL
+		.channel2 = IIO_MOD_ETHANOL,
+		.modified = 1,
+#else /* IIO_MOD_ETHANOL */
+		.extend_name = "ethanol",
+#endif /* IIO_MOD_ETHANOL */
 		.info_mask_separate =
 			BIT(IIO_CHAN_INFO_RAW),
 		.address = SGPC3_SIG_ETOH_IDX,
-		.extend_name = "ethanol",
 		.datasheet_name = "Ethanol signal",
 		.scan_type = {
 			.endianness = IIO_BE,
@@ -998,9 +1013,6 @@ static const struct attribute_group sgp_attr_group = {
 
 static const struct iio_info sgp_info = {
 	.attrs		= &sgp_attr_group,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
-	.driver_module	= THIS_MODULE,
-#endif /* LINUX_VERSION_CODE */
 	.read_raw	= sgp_read_raw,
 };
 
@@ -1015,7 +1027,6 @@ static int sgp_probe(struct i2c_client *client,
 {
 	struct iio_dev *indio_dev;
 	struct sgp_data *data;
-	const struct sgp_device *chip;
 	const struct of_device_id *of_id;
 	unsigned long product_id;
 	int ret;
@@ -1030,7 +1041,6 @@ static int sgp_probe(struct i2c_client *client,
 	else
 		product_id = id->driver_data;
 
-	chip = &sgp_devices[product_id];
 	data = iio_priv(indio_dev);
 	i2c_set_clientdata(client, indio_dev);
 	data->client = client;
@@ -1059,8 +1069,8 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->name = id->name;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
-	indio_dev->channels = chip->channels;
-	indio_dev->num_channels = chip->num_channels;
+	indio_dev->channels = sgp_devices[product_id].channels;
+	indio_dev->num_channels = sgp_devices[product_id].num_channels;
 
 	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (ret) {
