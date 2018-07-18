@@ -137,7 +137,7 @@ struct sgp_data {
 	enum sgp_cmd iaq_init_cmd;
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_gas_signals_cmd;
-	u8 baseline_len;
+	u8 num_baseline_words;
 	u16 user_baseline[2];
 	u16 power_mode;
 	union sgp_reading buffer;
@@ -325,12 +325,12 @@ static int sgp_read_cmd(struct sgp_data *data, enum sgp_cmd cmd,
  * @data:       SGP data
  * @cmd:        SGP Command to issue
  * @buf:        Data to write
- * @buf_size:   Data size of the buffer
+ * @buf_word_size:   Data size of the buffer in words
  *
  * Return:      0 on success, negative error otherwise.
  */
 static int sgp_write_cmd(struct sgp_data *data, enum sgp_cmd cmd, u16 *buf,
-			 size_t buf_size, unsigned long duration_us)
+			 size_t buf_word_size, unsigned long duration_us)
 {
 	int ret, ix;
 	u16 buf_idx;
@@ -339,7 +339,7 @@ static int sgp_write_cmd(struct sgp_data *data, enum sgp_cmd cmd, u16 *buf,
 	/* assemble buffer */
 	*((__be16 *)&buffer[0]) = cmd;
 	buf_idx = SGP_CMD_LEN;
-	for (ix = 0; ix < buf_size; ix++) {
+	for (ix = 0; ix < buf_word_size; ix++) {
 		*((__be16 *)&buffer[buf_idx]) = cpu_to_be16(buf[ix]);
 		buf_idx += SGP_WORD_LEN;
 		buffer[buf_idx] = crc8(sgp_crc8_table,
@@ -717,11 +717,12 @@ static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 
 	mutex_lock(&data->data_lock);
 	ret = sgp_read_cmd(data, SGP_CMD_GET_BASELINE, &data->buffer,
-			   data->baseline_len, SGP_CMD_DURATION_US);
+			   data->num_baseline_words, SGP_CMD_DURATION_US);
 	if (ret < 0)
 		goto unlock_fail;
 
-	for (ix = 0, jx = data->baseline_len - 1; ix < data->baseline_len;
+	for (ix = 0, jx = data->num_baseline_words - 1;
+	     ix < data->num_baseline_words;
 	     ix++, jx--) {
 		baseline_word = be16_to_cpu(data->buffer.raw_words[jx].value);
 		baseline_words[ix] = baseline_word;
@@ -784,7 +785,7 @@ static void sgp_set_baseline(struct sgp_data *data, u16 *baseline_words)
 {
 	mutex_lock(&data->data_lock);
 	data->user_baseline[0] = baseline_words[0];
-	if (data->baseline_len == 2)
+	if (data->num_baseline_words == 2)
 		data->user_baseline[1] = baseline_words[1];
 	mutex_unlock(&data->data_lock);
 	sgp_restart_iaq_thread(data);
@@ -800,14 +801,14 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	u16 words[2];
 	int ret = 0;
 
-	if (count - newline == (data->baseline_len * 4)) {
-		if (data->baseline_len == 1)
+	if (count - newline == (data->num_baseline_words * 4)) {
+		if (data->num_baseline_words == 1)
 			ret = sscanf(buf, "%04hx", &words[0]);
 		else
 			ret = sscanf(buf, "%04hx%04hx", &words[0], &words[1]);
 	}
 
-	if (ret != data->baseline_len) {
+	if (ret != data->num_baseline_words) {
 		dev_err(&data->client->dev, "invalid baseline format\n");
 		return -EINVAL;
 	}
@@ -962,7 +963,7 @@ static void sgp_init(struct sgp_data *data)
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_gas_signals_cmd = SGP30_CMD_MEASURE_SIGNAL;
 		data->product_id = SGP30;
-		data->baseline_len = 2;
+		data->num_baseline_words = 2;
 		data->supports_humidity_compensation = true;
 		data->iaq_defval_skip_jiffies = 15 * HZ;
 		break;
@@ -971,7 +972,7 @@ static void sgp_init(struct sgp_data *data)
 		data->measure_iaq_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->measure_gas_signals_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->product_id = SGPC3;
-		data->baseline_len = 1;
+		data->num_baseline_words = 1;
 		data->power_mode = SGPC3_POWER_MODE_LOW_POWER;
 		data->iaq_init_user_duration =
 			SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ;
