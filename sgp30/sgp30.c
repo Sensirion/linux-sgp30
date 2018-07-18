@@ -81,6 +81,7 @@ enum sgp_cmd {
 	SGP_CMD_IAQ_MEASURE			= SGP_CMD(0x2008),
 	SGP_CMD_GET_BASELINE			= SGP_CMD(0x2015),
 	SGP_CMD_SET_BASELINE			= SGP_CMD(0x201e),
+	SGP_CMD_GET_TVOC_FACTORY_BASELINE	= SGP_CMD(0x20b3),
 	SGP_CMD_GET_FEATURE_SET			= SGP_CMD(0x202f),
 	SGP_CMD_GET_SERIAL_ID			= SGP_CMD(0x3682),
 	SGP_CMD_SELFTEST			= SGP_CMD(0x2032),
@@ -98,6 +99,9 @@ enum sgp_cmd {
 	SGPC3_CMD_SET_POWER_MODE		= SGP_CMD(0x209f),
 };
 
+enum sgp_baseline_type {
+	SGP_BASELINE_TYPE_IAQ,
+	SGP_BASELINE_TYPE_TVOC,
 };
 
 struct sgp_version {
@@ -125,6 +129,7 @@ enum sgp_features {
 	SGP_FEATURE_NONE			= 0,
 	SGP_FEATURE_SET_ABSOLUTE_HUMIDITY	= 1 << 0,
 	SGP_FEATURE_SET_POWER_MODE		= 1 << 1,
+	SGP_FEATURE_TVOC_FACTORY_BASELINE	= 1 << 2,
 };
 
 struct sgp_data {
@@ -143,8 +148,10 @@ struct sgp_data {
 	enum sgp_cmd iaq_init_cmd;
 	enum sgp_cmd measure_iaq_cmd;
 	enum sgp_cmd measure_gas_signals_cmd;
+	enum sgp_cmd set_tvoc_baseline_cmd;
 	u8 num_baseline_words;
 	u16 user_baseline[2];
+	enum sgp_baseline_type user_baseline_type;
 	u16 power_mode;
 	union sgp_reading buffer;
 	union sgp_reading iaq_buffer;
@@ -403,6 +410,27 @@ static void sgp_iaq_thread_sleep_until(const struct sgp_data *data,
 	}
 }
 
+static int sgp_iaq_thread_set_baseline(struct sgp_data *data)
+{
+	size_t num_baseline_words;
+	enum sgp_cmd set_baseline_cmd;
+
+	switch (data->user_baseline_type) {
+	case SGP_BASELINE_TYPE_TVOC:
+		set_baseline_cmd = data->set_tvoc_baseline_cmd;
+		num_baseline_words = 1;
+		break;
+	case SGP_BASELINE_TYPE_IAQ:
+	default:
+		set_baseline_cmd = SGP_CMD_SET_BASELINE;
+		num_baseline_words = data->num_baseline_words;
+		break;
+	}
+
+	return sgp_write_cmd(data, set_baseline_cmd, data->user_baseline,
+			     num_baseline_words, SGP_CMD_DURATION_US);
+}
+
 static int sgp_iaq_threadfn(void *p)
 {
 	struct sgp_data *data = (struct sgp_data *)p;
@@ -420,10 +448,7 @@ static int sgp_iaq_threadfn(void *p)
 				goto unlock_sleep_continue;
 			data->iaq_init_start_jiffies = jiffies;
 			if (data->user_baseline[0]) {
-				ret = sgp_write_cmd(data, SGP_CMD_SET_BASELINE,
-						    data->user_baseline,
-						    data->baseline_len,
-						    SGP_CMD_DURATION_US);
+				ret = sgp_iaq_thread_set_baseline(data);
 				if (ret < 0) {
 					dev_err(&data->client->dev,
 						"IAQ set baseline failed [%d]\n",
@@ -741,26 +766,6 @@ unlock_fail:
 	return ret;
 }
 
-static ssize_t sgp_iaq_baseline_show(struct device *dev,
-				     __attribute__((unused))
-				     struct device_attribute *attr,
-				     char *buf)
-{
-	int ret;
-	u16 baseline_words[2];
-	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
-
-	ret = sgp_get_valid_baseline(data, baseline_words);
-	if (ret < 0)
-		return ret;
-
-	if (data->baseline_len == 1)
-		return sprintf(buf, "%04hx\n", baseline_words[0]);
-
-	return sprintf(buf, "%04hx%04hx\n", baseline_words[0],
-		       baseline_words[1]);
-}
-
 /**
  * Retrieve the sensor's baseline and report whether it's valid for persistence
  * @baseline:   sensor's current baseline
@@ -786,11 +791,33 @@ static int sgp_get_valid_baseline(struct sgp_data *data, u16 *baseline_words)
 	return ret;
 }
 
-static void sgp_set_baseline(struct sgp_data *data, u16 *baseline_words)
+static ssize_t sgp_iaq_baseline_show(struct device *dev,
+				     __attribute__((unused))
+				     struct device_attribute *attr,
+				     char *buf)
+{
+	int ret;
+	u16 baseline_words[2];
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+
+	ret = sgp_get_valid_baseline(data, baseline_words);
+	if (ret < 0)
+		return ret;
+
+	if (data->num_baseline_words == 1)
+		return sprintf(buf, "%04hx\n", baseline_words[0]);
+
+	return sprintf(buf, "%04hx%04hx\n", baseline_words[0],
+		       baseline_words[1]);
+}
+
+static void sgp_set_baseline(struct sgp_data *data, u16 *baseline_words,
+			     enum sgp_baseline_type type)
 {
 	mutex_lock(&data->data_lock);
+	data->user_baseline_type = type;
 	data->user_baseline[0] = baseline_words[0];
-	if (data->num_baseline_words == 2)
+	if (type == SGP_BASELINE_TYPE_IAQ && data->num_baseline_words == 2)
 		data->user_baseline[1] = baseline_words[1];
 	mutex_unlock(&data->data_lock);
 	sgp_restart_iaq_thread(data);
@@ -818,7 +845,58 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 		return -EINVAL;
 	}
 
-	sgp_set_baseline(data, words);
+	sgp_set_baseline(data, words, SGP_BASELINE_TYPE_IAQ);
+	return count;
+}
+
+static ssize_t sgp_tvoc_factory_baseline_show(struct device *dev,
+					      __attribute__((unused))
+					      struct device_attribute *attr,
+					      char *buf)
+{
+	int ret;
+	u16 baseline_word;
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+
+	if (!(data->sgp_feature_mask & SGP_FEATURE_TVOC_FACTORY_BASELINE))
+		return -EINVAL;
+
+	mutex_lock(&data->data_lock);
+	ret = sgp_read_cmd(data, SGP_CMD_GET_TVOC_FACTORY_BASELINE,
+			   &data->buffer, 1, SGP_CMD_DURATION_US);
+	if (ret < 0) {
+		mutex_unlock(&data->data_lock);
+		return ret;
+	}
+
+	baseline_word = be16_to_cpu(data->buffer.raw_words[0].value);
+	mutex_unlock(&data->data_lock);
+
+	return sprintf(buf, "%04hx\n", baseline_word);
+}
+
+static ssize_t sgp_tvoc_baseline_store(struct device *dev,
+				       __attribute__((unused))
+				       struct device_attribute *attr,
+				       const char *buf, size_t count)
+{
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+	int newline = (count > 0 && buf[count - 1] == '\n');
+	u16 word;
+	int ret = 0;
+
+	if (!(data->sgp_feature_mask & SGP_FEATURE_TVOC_FACTORY_BASELINE))
+		return -EINVAL;
+
+	if (count - newline == 4)
+		ret = sscanf(buf, "%04hx", &word);
+
+	if (ret != 1) {
+		dev_err(&data->client->dev, "invalid tVOC baseline format\n");
+		return -EINVAL;
+	}
+
+	sgp_set_baseline(data, &word, SGP_BASELINE_TYPE_TVOC);
 	return count;
 }
 
@@ -839,8 +917,8 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	}
 
 	mutex_lock(&data->data_lock);
-	ret = sgp_read_cmd(data, SGP_CMD_SELFTEST, &data->buffer,
-			   1, SGP_SELFTEST_DURATION_US);
+	ret = sgp_read_cmd(data, SGP_CMD_SELFTEST, &data->buffer, 1,
+			   SGP_SELFTEST_DURATION_US);
 	if (ret < 0) {
 		mutex_unlock(&data->data_lock);
 		return ret;
@@ -850,10 +928,12 @@ static ssize_t sgp_selftest_show(struct device *dev,
 	mutex_unlock(&data->data_lock);
 
 	if (data->product_id == SGP30) {
-		if (baseline_valid > 0)
-			sgp_set_baseline(data, baseline_words);
-		else
+		if (baseline_valid > 0) {
+			sgp_set_baseline(data, baseline_words,
+					 SGP_BASELINE_TYPE_IAQ);
+		} else {
 			sgp_restart_iaq_thread(data);
+		}
 	}
 
 	return sprintf(buf, "%s\n",
@@ -968,21 +1048,31 @@ static void sgp_init(struct sgp_data *data)
 		data->measure_interval_jiffies = SGP30_MEASURE_INTERVAL_HZ * HZ;
 		data->measure_iaq_cmd = SGP_CMD_IAQ_MEASURE;
 		data->measure_gas_signals_cmd = SGP30_CMD_MEASURE_SIGNAL;
+		data->set_tvoc_baseline_cmd = SGP30_CMD_SET_TVOC_BASELINE;
 		data->product_id = SGP30;
 		data->num_baseline_words = 2;
 		data->iaq_defval_skip_jiffies = 15 * HZ;
 		data->sgp_feature_mask |= SGP_FEATURE_SET_ABSOLUTE_HUMIDITY;
+		if (SGP_VERS_MAJOR(data) == 1 && SGP_VERS_MINOR(data) >= 1) {
+			data->sgp_feature_mask |=
+				SGP_FEATURE_TVOC_FACTORY_BASELINE;
+		}
 		break;
 	case SGPC3:
 		data->measure_interval_jiffies = SGPC3_MEASURE_INTERVAL_HZ * HZ;
 		data->measure_iaq_cmd = SGPC3_CMD_MEASURE_RAW;
 		data->measure_gas_signals_cmd = SGPC3_CMD_MEASURE_RAW;
+		data->set_tvoc_baseline_cmd = SGP_CMD_SET_BASELINE;
 		data->product_id = SGPC3;
 		data->num_baseline_words = 1;
 		data->power_mode = SGPC3_POWER_MODE_LOW_POWER;
 		data->iaq_init_user_duration =
 			SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ;
 		data->iaq_init_fn = &sgpc3_iaq_init;
+		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 5) {
+			data->sgp_feature_mask |=
+				SGP_FEATURE_TVOC_FACTORY_BASELINE;
+		}
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 6) {
 			data->sgp_feature_mask |=
 				SGP_FEATURE_SET_ABSOLUTE_HUMIDITY |
@@ -1002,6 +1092,9 @@ static IIO_DEVICE_ATTR(set_iaq_preheat_seconds, 0220, NULL,
 		       sgp_iaq_preheat_store, 0);
 static IIO_DEVICE_ATTR(iaq_baseline, 0664, sgp_iaq_baseline_show,
 		       sgp_iaq_baseline_store, 0);
+static IIO_DEVICE_ATTR(tvoc_factory_baseline, 0664,
+		       sgp_tvoc_factory_baseline_show,
+		       sgp_tvoc_baseline_store, 0);
 static IIO_DEVICE_ATTR(set_absolute_humidity, 0220, NULL,
 		       sgp_absolute_humidity_store, 0);
 static IIO_DEVICE_ATTR(set_power_mode, 0220, NULL,
@@ -1012,6 +1105,7 @@ static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_feature_set_version.dev_attr.attr,
 	&iio_dev_attr_in_selftest.dev_attr.attr,
 	&iio_dev_attr_iaq_baseline.dev_attr.attr,
+	&iio_dev_attr_tvoc_factory_baseline.dev_attr.attr,
 	&iio_dev_attr_set_iaq_preheat_seconds.dev_attr.attr,
 	&iio_dev_attr_set_absolute_humidity.dev_attr.attr,
 	&iio_dev_attr_set_power_mode.dev_attr.attr,
