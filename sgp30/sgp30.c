@@ -1080,8 +1080,6 @@ static void sgp_init(struct sgp_data *data)
 		}
 		break;
 	};
-	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
-				       "%s-iaq", data->client->name);
 }
 
 static IIO_DEVICE_ATTR(in_serial_id, 0444, sgp_serial_id_show, NULL, 0);
@@ -1111,6 +1109,24 @@ static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_set_power_mode.dev_attr.attr,
 	NULL
 };
+
+static void sgp_filter_attributes(struct sgp_data *data) {
+	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE)) {
+		iio_dev_attr_set_power_mode.dev_attr.attr.mode = 0;
+		iio_dev_attr_set_power_mode.dev_attr.store = NULL;
+	}
+
+	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_ABSOLUTE_HUMIDITY)) {
+		iio_dev_attr_set_absolute_humidity.dev_attr.attr.mode = 0;
+		iio_dev_attr_set_absolute_humidity.dev_attr.store = NULL;
+	}
+
+	if (!(data->sgp_feature_mask & SGP_FEATURE_TVOC_FACTORY_BASELINE)) {
+		iio_dev_attr_tvoc_factory_baseline.dev_attr.attr.mode = 0;
+		iio_dev_attr_tvoc_factory_baseline.dev_attr.show = NULL;
+		iio_dev_attr_tvoc_factory_baseline.dev_attr.store = NULL;
+	}
+}
 
 static const struct attribute_group sgp_attr_group = {
 	.attrs = sgp_attributes,
@@ -1177,13 +1193,17 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->channels = sgp_devices[product_id].channels;
 	indio_dev->num_channels = sgp_devices[product_id].num_channels;
 
+	sgp_init(data);
+	sgp_filter_attributes(data);
+
 	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (ret) {
 		dev_err(&client->dev, "failed to register iio device\n");
 		return ret;
 	}
 
-	sgp_init(data);
+	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
+				       "%s-iaq", data->client->name);
 	return ret;
 }
 
