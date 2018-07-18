@@ -77,24 +77,27 @@ enum sgpc3_channel_idx {
 };
 
 enum sgp_cmd {
-	SGP_CMD_IAQ_INIT		= SGP_CMD(0x2003),
-	SGP_CMD_IAQ_MEASURE		= SGP_CMD(0x2008),
-	SGP_CMD_GET_BASELINE		= SGP_CMD(0x2015),
-	SGP_CMD_SET_BASELINE		= SGP_CMD(0x201e),
-	SGP_CMD_GET_FEATURE_SET		= SGP_CMD(0x202f),
-	SGP_CMD_GET_SERIAL_ID		= SGP_CMD(0x3682),
-	SGP_CMD_SELFTEST		= SGP_CMD(0x2032),
-	SGP_CMD_SET_ABSOLUTE_HUMIDITY	= SGP_CMD(0x2061),
+	SGP_CMD_IAQ_INIT			= SGP_CMD(0x2003),
+	SGP_CMD_IAQ_MEASURE			= SGP_CMD(0x2008),
+	SGP_CMD_GET_BASELINE			= SGP_CMD(0x2015),
+	SGP_CMD_SET_BASELINE			= SGP_CMD(0x201e),
+	SGP_CMD_GET_FEATURE_SET			= SGP_CMD(0x202f),
+	SGP_CMD_GET_SERIAL_ID			= SGP_CMD(0x3682),
+	SGP_CMD_SELFTEST			= SGP_CMD(0x2032),
+	SGP_CMD_SET_ABSOLUTE_HUMIDITY		= SGP_CMD(0x2061),
 
-	SGP30_CMD_MEASURE_SIGNAL	= SGP_CMD(0x2050),
+	SGP30_CMD_MEASURE_SIGNAL		= SGP_CMD(0x2050),
+	SGP30_CMD_SET_TVOC_BASELINE		= SGP_CMD(0x2077),
 
-	SGPC3_CMD_IAQ_INIT_0		= SGP_CMD(0x2089),
-	SGPC3_CMD_IAQ_INIT_16		= SGP_CMD(0x2024),
-	SGPC3_CMD_IAQ_INIT_64		= SGP_CMD(0x2003),
-	SGPC3_CMD_IAQ_INIT_184		= SGP_CMD(0x206a),
-	SGPC3_CMD_IAQ_INIT_CONTINUOUS	= SGP_CMD(0x20ae),
-	SGPC3_CMD_MEASURE_RAW		= SGP_CMD(0x2046),
-	SGPC3_CMD_SET_POWER_MODE	= SGP_CMD(0x209f),
+	SGPC3_CMD_IAQ_INIT_0			= SGP_CMD(0x2089),
+	SGPC3_CMD_IAQ_INIT_16			= SGP_CMD(0x2024),
+	SGPC3_CMD_IAQ_INIT_64			= SGP_CMD(0x2003),
+	SGPC3_CMD_IAQ_INIT_184			= SGP_CMD(0x206a),
+	SGPC3_CMD_IAQ_INIT_CONTINUOUS		= SGP_CMD(0x20ae),
+	SGPC3_CMD_MEASURE_RAW			= SGP_CMD(0x2046),
+	SGPC3_CMD_SET_POWER_MODE		= SGP_CMD(0x209f),
+};
+
 };
 
 struct sgp_version {
@@ -434,7 +437,8 @@ static int sgp_iaq_threadfn(void *p)
 
 		ret = sgp_measure_iaq(data);
 		if (ret && ret != -EBUSY) {
-			dev_warn(&data->client->dev, "IAQ measurement error [%d]\n",
+			dev_warn(&data->client->dev,
+				 "IAQ measurement error [%d]\n",
 				 ret);
 		}
 unlock_sleep_continue:
@@ -971,11 +975,11 @@ static void sgp_init(struct sgp_data *data)
 		data->power_mode = SGPC3_POWER_MODE_LOW_POWER;
 		data->iaq_init_user_duration =
 			SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ;
+		data->iaq_init_fn = &sgpc3_iaq_init;
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 6) {
 			data->supports_humidity_compensation = true;
 			data->supports_power_mode = true;
 		}
-		data->iaq_init_fn = &sgpc3_iaq_init;
 		break;
 	};
 	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
@@ -1103,7 +1107,7 @@ MODULE_DEVICE_TABLE(of, sgp_dt_ids);
 
 static struct i2c_driver sgp_driver = {
 	.driver = {
-		.name	= "sgp30",
+		.name = "sgp30",
 		.of_match_table = of_match_ptr(sgp_dt_ids),
 	},
 	.probe = sgp_probe,
