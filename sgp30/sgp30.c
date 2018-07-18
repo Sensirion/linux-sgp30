@@ -121,6 +121,12 @@ enum _iaq_buffer_state {
 	IAQ_BUFFER_VALID,
 };
 
+enum sgp_features {
+	SGP_FEATURE_NONE			= 0,
+	SGP_FEATURE_SET_ABSOLUTE_HUMIDITY	= 1 << 0,
+	SGP_FEATURE_SET_POWER_MODE		= 1 << 1,
+};
+
 struct sgp_data {
 	struct i2c_client *client;
 	struct task_struct *iaq_thread;
@@ -143,8 +149,7 @@ struct sgp_data {
 	union sgp_reading buffer;
 	union sgp_reading iaq_buffer;
 	enum _iaq_buffer_state iaq_buffer_state;
-	bool supports_humidity_compensation;
-	bool supports_power_mode;
+	enum sgp_features sgp_feature_mask;
 };
 
 struct sgp_device {
@@ -459,7 +464,7 @@ static ssize_t sgp_absolute_humidity_store(struct device *dev,
 	u16 ah_scaled;
 	int ret;
 
-	if (!data->supports_humidity_compensation)
+	if (!data->sgp_feature_mask & SGP_FEATURE_SET_ABSOLUTE_HUMIDITY)
 		return -EINVAL;
 
 	ret = kstrtou32(buf, 10, &ah);
@@ -568,7 +573,7 @@ static void sgpc3_iaq_init(struct sgp_data *data)
 	int skip_cycles;
 
 	data->iaq_init_duration_jiffies = data->iaq_init_user_duration * HZ;
-	if (data->supports_power_mode) {
+	if (data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE) {
 		data->iaq_init_cmd = SGPC3_CMD_IAQ_INIT_CONTINUOUS;
 
 		if (data->power_mode == SGPC3_POWER_MODE_ULTRA_LOW_POWER) {
@@ -635,7 +640,7 @@ static ssize_t sgp_iaq_preheat_store(struct device *dev,
 		goto unlock_fail;
 	}
 
-	if (data->supports_power_mode) {
+	if (data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE) {
 		if (init_duration > 300) {
 			ret = -EINVAL;
 			goto unlock_fail;
@@ -675,7 +680,7 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 	const char ULTRA_LOW[] = "ultra-low";
 	const char LOW[] = "low";
 
-	if (!data->supports_power_mode)
+	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE))
 		return -EINVAL;
 
 	if (strncmp(buf, ULTRA_LOW, sizeof(ULTRA_LOW) - 1) == 0)
@@ -957,6 +962,7 @@ static void sgp_init(struct sgp_data *data)
 	data->iaq_buffer_state = IAQ_BUFFER_EMPTY;
 	data->user_baseline[0] = 0;
 	data->user_baseline[1] = 0;
+	data->sgp_feature_mask = SGP_FEATURE_NONE;
 	switch (SGP_VERS_PRODUCT(data)) {
 	case SGP30:
 		data->measure_interval_jiffies = SGP30_MEASURE_INTERVAL_HZ * HZ;
@@ -964,8 +970,8 @@ static void sgp_init(struct sgp_data *data)
 		data->measure_gas_signals_cmd = SGP30_CMD_MEASURE_SIGNAL;
 		data->product_id = SGP30;
 		data->num_baseline_words = 2;
-		data->supports_humidity_compensation = true;
 		data->iaq_defval_skip_jiffies = 15 * HZ;
+		data->sgp_feature_mask |= SGP_FEATURE_SET_ABSOLUTE_HUMIDITY;
 		break;
 	case SGPC3:
 		data->measure_interval_jiffies = SGPC3_MEASURE_INTERVAL_HZ * HZ;
@@ -978,8 +984,9 @@ static void sgp_init(struct sgp_data *data)
 			SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ;
 		data->iaq_init_fn = &sgpc3_iaq_init;
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 6) {
-			data->supports_humidity_compensation = true;
-			data->supports_power_mode = true;
+			data->sgp_feature_mask |=
+				SGP_FEATURE_SET_ABSOLUTE_HUMIDITY |
+				SGP_FEATURE_SET_POWER_MODE;
 		}
 		break;
 	};
