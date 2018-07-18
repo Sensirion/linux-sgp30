@@ -745,7 +745,7 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
 	u16 baseline_words[2];
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 
-	ret = sgp_get_baseline(data, baseline_words);
+	ret = sgp_get_valid_baseline(data, baseline_words);
 	if (ret < 0)
 		return ret;
 
@@ -764,7 +764,7 @@ static ssize_t sgp_iaq_baseline_show(struct device *dev,
  *              operating for at least 12h, -EBUSY if the baseline is not yet
  *              valid, another negative error otherwise.
  */
-static int sgp_is_baseline_valid(struct sgp_data *data, u16 *baseline_words)
+static int sgp_get_valid_baseline(struct sgp_data *data, u16 *baseline_words)
 {
 	int ret;
 
@@ -830,7 +830,7 @@ static ssize_t sgp_selftest_show(struct device *dev,
 
 	if (data->product_id == SGP30) {
 		/* On the SGP30, the self-test interferes with iaq_init */
-		baseline_valid = sgp_is_baseline_valid(data, baseline_words);
+		baseline_valid = sgp_get_valid_baseline(data, baseline_words);
 	}
 
 	mutex_lock(&data->data_lock);
