@@ -489,9 +489,6 @@ static ssize_t sgp_absolute_humidity_store(struct device *dev,
 	u16 ah_scaled;
 	int ret;
 
-	if (!data->sgp_feature_mask & SGP_FEATURE_SET_ABSOLUTE_HUMIDITY)
-		return -EINVAL;
-
 	ret = kstrtou32(buf, 10, &ah);
 	if (ret != 1 || ah < 0 || ah > 256000)
 		return -EINVAL;
@@ -705,9 +702,6 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 	const char ULTRA_LOW[] = "ultra-low";
 	const char LOW[] = "low";
 
-	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE))
-		return -EINVAL;
-
 	if (strncmp(buf, ULTRA_LOW, sizeof(ULTRA_LOW) - 1) == 0)
 		power_mode = SGPC3_POWER_MODE_ULTRA_LOW_POWER;
 	else if (strncmp(buf, LOW, sizeof(LOW) - 1) == 0)
@@ -858,9 +852,6 @@ static ssize_t sgp_tvoc_factory_baseline_show(struct device *dev,
 	u16 baseline_word;
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 
-	if (!(data->sgp_feature_mask & SGP_FEATURE_TVOC_FACTORY_BASELINE))
-		return -EINVAL;
-
 	mutex_lock(&data->data_lock);
 	ret = sgp_read_cmd(data, SGP_CMD_GET_TVOC_FACTORY_BASELINE,
 			   &data->buffer, 1, SGP_CMD_DURATION_US);
@@ -884,9 +875,6 @@ static ssize_t sgp_tvoc_baseline_store(struct device *dev,
 	int newline = (count > 0 && buf[count - 1] == '\n');
 	u16 word;
 	int ret = 0;
-
-	if (!(data->sgp_feature_mask & SGP_FEATURE_TVOC_FACTORY_BASELINE))
-		return -EINVAL;
 
 	if (count - newline == 4)
 		ret = sscanf(buf, "%04hx", &word);
