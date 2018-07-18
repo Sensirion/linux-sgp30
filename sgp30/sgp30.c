@@ -992,8 +992,8 @@ static IIO_DEVICE_ATTR(in_feature_set_version, 0444,
 static IIO_DEVICE_ATTR(in_selftest, 0444, sgp_selftest_show, NULL, 0);
 static IIO_DEVICE_ATTR(set_iaq_preheat_seconds, 0220, NULL,
 		       sgp_iaq_preheat_store, 0);
-static IIO_DEVICE_ATTR(in_iaq_baseline, 0444, sgp_iaq_baseline_show, NULL, 0);
-static IIO_DEVICE_ATTR(set_iaq_baseline, 0220, NULL, sgp_iaq_baseline_store, 0);
+static IIO_DEVICE_ATTR(iaq_baseline, 0664, sgp_iaq_baseline_show,
+		       sgp_iaq_baseline_store, 0);
 static IIO_DEVICE_ATTR(set_absolute_humidity, 0220, NULL,
 		       sgp_absolute_humidity_store, 0);
 static IIO_DEVICE_ATTR(set_power_mode, 0220, NULL,
@@ -1003,8 +1003,7 @@ static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_serial_id.dev_attr.attr,
 	&iio_dev_attr_in_feature_set_version.dev_attr.attr,
 	&iio_dev_attr_in_selftest.dev_attr.attr,
-	&iio_dev_attr_in_iaq_baseline.dev_attr.attr,
-	&iio_dev_attr_set_iaq_baseline.dev_attr.attr,
+	&iio_dev_attr_iaq_baseline.dev_attr.attr,
 	&iio_dev_attr_set_iaq_preheat_seconds.dev_attr.attr,
 	&iio_dev_attr_set_absolute_humidity.dev_attr.attr,
 	&iio_dev_attr_set_power_mode.dev_attr.attr,
