@@ -490,7 +490,9 @@ static ssize_t sgp_absolute_humidity_store(struct device *dev,
 	int ret;
 
 	ret = kstrtou32(buf, 10, &ah);
-	if (ret != 1 || ah < 0 || ah > 256000)
+	if (ret)
+		return ret;
+	if (ah > 256000)
 		return -EINVAL;
 
 	/* ah_scaled = (u16)((ah / 1000.0) * 256.0) */
@@ -657,10 +659,8 @@ static ssize_t sgp_iaq_preheat_store(struct device *dev,
 
 	mutex_lock(&data->data_lock);
 	ret = kstrtou32(buf, 10, &init_duration);
-	if (ret) {
-		ret = -EINVAL;
+	if (ret)
 		goto unlock_fail;
-	}
 
 	if (data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE) {
 		if (init_duration > 300) {
