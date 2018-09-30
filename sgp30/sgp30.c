@@ -1192,7 +1192,7 @@ static int sgp_probe(struct i2c_client *client,
 
 	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
 				       "%s-iaq", data->client->name);
-	return ret;
+	return 0;
 }
 
 static int sgp_remove(struct i2c_client *client)
