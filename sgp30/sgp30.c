@@ -23,14 +23,11 @@
 #include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
-#include <linux/init.h>
 #include <linux/i2c.h>
 #include <linux/of_device.h>
 #include <linux/iio/iio.h>
-#include <linux/iio/buffer.h>
 #include <linux/iio/sysfs.h>
 #include <linux/string.h>
-#include <linux/version.h>
 
 #define SGP_WORD_LEN				2
 #define SGP_CRC8_POLYNOMIAL			0x31
