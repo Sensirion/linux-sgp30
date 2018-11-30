@@ -1098,22 +1098,27 @@ static struct attribute *sgp_attributes[] = {
 	NULL
 };
 
-static void sgp_filter_attributes(struct sgp_data *data) {
-	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE)) {
-		iio_dev_attr_set_power_mode.dev_attr.attr.mode = 0;
-		iio_dev_attr_set_power_mode.dev_attr.store = NULL;
-	}
+umode_t sgp_attributes_visible(struct kobject *kobj, struct attribute *attr,
+                               int index)
+{
+	struct device *dev = kobj_to_dev(kobj);
+	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
+	umode_t effective_mode = attr->mode;
+	u16 product = SGP_VERS_PRODUCT(data);
 
-	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_ABSOLUTE_HUMIDITY)) {
-		iio_dev_attr_set_absolute_humidity.dev_attr.attr.mode = 0;
-		iio_dev_attr_set_absolute_humidity.dev_attr.store = NULL;
-	}
+	if (product == SGP30 &&
+	    attr == &iio_dev_attr_set_iaq_preheat_seconds.dev_attr.attr)
+		return 0;
 
-	if (!(data->sgp_feature_mask & SGP_FEATURE_TVOC_FACTORY_BASELINE)) {
-		iio_dev_attr_tvoc_factory_baseline.dev_attr.attr.mode = 0;
-		iio_dev_attr_tvoc_factory_baseline.dev_attr.show = NULL;
-		iio_dev_attr_tvoc_factory_baseline.dev_attr.store = NULL;
-	}
+	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_ABSOLUTE_HUMIDITY) &&
+	    attr == &iio_dev_attr_set_absolute_humidity.dev_attr.attr)
+		return 0;
+
+	if (!(data->sgp_feature_mask & SGP_FEATURE_SET_POWER_MODE) &&
+	    attr == &iio_dev_attr_set_power_mode.dev_attr.attr)
+		return 0;
+
+	return effective_mode;
 }
 
 static const struct attribute_group sgp_attr_group = {
@@ -1175,6 +1180,7 @@ static int sgp_probe(struct i2c_client *client,
 
 	indio_dev->dev.parent = &client->dev;
 	indio_dev->info = &sgp_info;
+	indio_dev->chan_attr_group.is_visible = sgp_attributes_visible;
 	indio_dev->name = id->name;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
@@ -1182,7 +1188,6 @@ static int sgp_probe(struct i2c_client *client,
 	indio_dev->num_channels = sgp_devices[product_id].num_channels;
 
 	sgp_init(data);
-	sgp_filter_attributes(data);
 
 	ret = devm_iio_device_register(&client->dev, indio_dev);
 	if (ret) {
@@ -1192,7 +1197,7 @@ static int sgp_probe(struct i2c_client *client,
 
 	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
 				       "%s-iaq", data->client->name);
-	return ret;
+	return 0;
 }
 
 static int sgp_remove(struct i2c_client *client)
