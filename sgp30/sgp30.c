@@ -49,7 +49,8 @@
 #define SGPC3_DEFAULT_IAQ_INIT_DURATION_HZ	64
 #define SGP_SELFTEST_OK				0xd400
 #define SGP_VERS_PRODUCT(data)	((((data)->feature_set) & 0xf000) >> 12)
-#define SGP_VERS_RESERVED(data)	((((data)->feature_set) & 0x0e00) >> 9)
+#define SGP_VERS_RESERVED(data)	((((data)->feature_set) & 0x0800) >> 11)
+#define SGP_VERS_GEN(data)	((((data)->feature_set) & 0x0600) >> 9)
 #define SGP_VERS_ENG_BIT(data)	((((data)->feature_set) & 0x0100) >> 8)
 #define SGP_VERS_MAJOR(data)	((((data)->feature_set) & 0x00e0) >> 5)
 #define SGP_VERS_MINOR(data)	(((data)->feature_set) & 0x001f)
@@ -974,20 +975,27 @@ static int sgp_check_compat(struct sgp_data *data,
 	u16 ix, num_fs;
 	u16 product = SGP_VERS_PRODUCT(data);
 	u16 reserved = SGP_VERS_RESERVED(data);
+	u16 generation = SGP_VERS_GEN(data);
 	u16 major = SGP_VERS_MAJOR(data);
 	u16 minor = SGP_VERS_MINOR(data);
 
 	/* driver does not match product */
+	if (generation != 0) {
+		dev_err(&data->client->dev,
+			"incompatible product generation %d != 0", generation);
+		return -ENODEV;
+	}
+
 	if (product != product_id) {
 		dev_err(&data->client->dev,
 			"sensor reports a different product: 0x%04hx\n",
 			product);
 		return -ENODEV;
 	}
-	if (reserved) {
-		dev_warn(&data->client->dev, "reserved bits set: 0x%04hx\n",
-			 reserved);
-	}
+
+	if (reserved)
+		dev_warn(&data->client->dev, "reserved bit is set\n");
+
 	/* engineering samples are not supported: no interface guarantees */
 	if (SGP_VERS_ENG_BIT(data))
 		return -ENODEV;
