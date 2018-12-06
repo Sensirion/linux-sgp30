@@ -945,8 +945,8 @@ static ssize_t sgp_feature_set_version_show(struct device *dev,
 {
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 
-	return sprintf(buf, "%hu.%hu\n", (data->feature_set & 0x00e0) >> 5,
-		       data->feature_set & 0x001f);
+	return sprintf(buf, "%hu.%hu\n", SGP_VERS_MAJOR(data),
+		       SGP_VERS_MINOR(data));
 }
 
 static int sgp_get_serial_id(struct sgp_data *data)
