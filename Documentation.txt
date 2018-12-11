@@ -15,17 +15,17 @@ signals are available. Both signals can be humidity-compensated by the sensor.
 * CO2eq (in_concentration_co2_input) at ppm precision (1e-6) -- SGP30 only
 
 2.1.1. IAQ Initialization
-Before Indoor Air Quality (IAQ) values can be read, the IAQ mode must be
-initialized by sending the "iaq_init" command from the data sheet to the sensor.
-The sgp30 driver performs this initialization automatically on instantiation.
+Before Indoor Air Quality values can be read, the IAQ mode must be initialized
+by sending the "iaq_init" command from the data sheet to the sensor. The sgp30
+driver performs this initialization automatically on instantiation.
 
 After initializing IAQ, at least one IAQ signal must be read out every second
 (SGP30) / every two seconds (SGPC3) for the sensor to correctly maintain its
 internal baseline. The driver continuously performs this task in a background
 thread and caches the latest measurement for retrieval.
 
-For the first 15s of operation after "iaq_init", default values are returned by
-the sensor. Default values are not returned by the driver, instead an -EBUSY
+For the first 15s of operation after initialization, default values are returned
+by the sensor. Default values are not returned by the driver, instead an -EBUSY
 error is returned.
 
 2.1.2. Pausing and Resuming IAQ
