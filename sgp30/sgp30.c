@@ -974,21 +974,19 @@ unlock_fail:
 static int sgp_check_compat(struct sgp_data *data,
 			    unsigned int product_id)
 {
-	struct sgp_version *supported_versions;
+	const struct sgp_version *supported_versions;
 	u16 ix, num_fs;
-	u16 product = SGP_VERS_PRODUCT(data);
-	u16 reserved = SGP_VERS_RESERVED(data);
-	u16 generation = SGP_VERS_GEN(data);
-	u16 major = SGP_VERS_MAJOR(data);
-	u16 minor = SGP_VERS_MINOR(data);
+	u16 product, generation, major, minor;
 
 	/* driver does not match product */
+	generation = SGP_VERS_GEN(data);
 	if (generation != 0) {
 		dev_err(&data->client->dev,
 			"incompatible product generation %d != 0", generation);
 		return -ENODEV;
 	}
 
+	product = SGP_VERS_PRODUCT(data);
 	if (product != product_id) {
 		dev_err(&data->client->dev,
 			"sensor reports a different product: 0x%04hx\n",
@@ -996,7 +994,7 @@ static int sgp_check_compat(struct sgp_data *data,
 		return -ENODEV;
 	}
 
-	if (reserved)
+	if (SGP_VERS_RESERVED(data))
 		dev_warn(&data->client->dev, "reserved bit is set\n");
 
 	/* engineering samples are not supported: no interface guarantees */
@@ -1005,19 +1003,19 @@ static int sgp_check_compat(struct sgp_data *data,
 
 	switch (product) {
 	case SGP30:
-		supported_versions =
-			(struct sgp_version *)supported_versions_sgp30;
+		supported_versions = supported_versions_sgp30;
 		num_fs = ARRAY_SIZE(supported_versions_sgp30);
 		break;
 	case SGPC3:
-		supported_versions =
-			(struct sgp_version *)supported_versions_sgpc3;
+		supported_versions = supported_versions_sgpc3;
 		num_fs = ARRAY_SIZE(supported_versions_sgpc3);
 		break;
 	default:
 		return -ENODEV;
 	}
 
+	major = SGP_VERS_MAJOR(data);
+	minor = SGP_VERS_MAJOR(data);
 	for (ix = 0; ix < num_fs; ix++) {
 		if (major == supported_versions[ix].major &&
 		    minor >= supported_versions[ix].minor)
