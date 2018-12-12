@@ -283,6 +283,7 @@ static int sgp_verify_buffer(const struct sgp_data *data,
 			return -EIO;
 		}
 	}
+
 	return 0;
 }
 
@@ -386,6 +387,7 @@ static int sgp_measure_iaq(struct sgp_data *data)
 		return -EBUSY;
 
 	data->iaq_buffer_state = IAQ_BUFFER_VALID;
+
 	return 0;
 }
 
@@ -467,6 +469,7 @@ unlock_sleep_continue:
 		mutex_unlock(&data->data_lock);
 		sgp_iaq_thread_sleep_until(data, next_update_jiffies);
 	}
+
 	return 0;
 }
 
@@ -572,6 +575,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 	default:
 		return -EINVAL;
 	}
+
 	return ret;
 }
 
@@ -679,6 +683,7 @@ static ssize_t sgp_iaq_preheat_store(struct device *dev,
 
 unlock_fail:
 	mutex_unlock(&data->data_lock);
+
 	return ret;
 }
 
@@ -722,6 +727,7 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 	mutex_unlock(&data->data_lock);
 
 	sgp_restart_iaq_thread(data);
+
 	return count;
 }
 
@@ -748,6 +754,7 @@ static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 
 unlock_fail:
 	mutex_unlock(&data->data_lock);
+
 	return ret;
 }
 
@@ -831,6 +838,7 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	}
 
 	sgp_set_baseline(data, words, SGP_BASELINE_TYPE_IAQ);
+
 	return count;
 }
 
@@ -876,6 +884,7 @@ static ssize_t sgp_tvoc_baseline_store(struct device *dev,
 	}
 
 	sgp_set_baseline(data, &word, SGP_BASELINE_TYPE_TVOC);
+
 	return count;
 }
 
@@ -958,6 +967,7 @@ static int sgp_get_serial_id(struct sgp_data *data)
 
 unlock_fail:
 	mutex_unlock(&data->data_lock);
+
 	return ret;
 }
 
@@ -1015,6 +1025,7 @@ static int sgp_check_compat(struct sgp_data *data,
 	}
 	dev_err(&data->client->dev, "unsupported sgp version: %d.%d\n",
 		major, minor);
+
 	return -ENODEV;
 }
 
@@ -1195,6 +1206,7 @@ static int sgp_probe(struct i2c_client *client,
 
 	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
 				       "%s-iaq", data->client->name);
+
 	return 0;
 }
 
@@ -1205,6 +1217,7 @@ static int sgp_remove(struct i2c_client *client)
 
 	if (data->iaq_thread)
 		kthread_stop(data->iaq_thread);
+
 	return 0;
 }
 
