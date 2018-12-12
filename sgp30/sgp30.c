@@ -283,6 +283,7 @@ static int sgp_verify_buffer(const struct sgp_data *data,
 			return -EIO;
 		}
 	}
+
 	return 0;
 }
 
@@ -386,6 +387,7 @@ static int sgp_measure_iaq(struct sgp_data *data)
 		return -EBUSY;
 
 	data->iaq_buffer_state = IAQ_BUFFER_VALID;
+
 	return 0;
 }
 
@@ -467,6 +469,7 @@ unlock_sleep_continue:
 		mutex_unlock(&data->data_lock);
 		sgp_iaq_thread_sleep_until(data, next_update_jiffies);
 	}
+
 	return 0;
 }
 
@@ -572,6 +575,7 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 	default:
 		return -EINVAL;
 	}
+
 	return ret;
 }
 
@@ -679,6 +683,7 @@ static ssize_t sgp_iaq_preheat_store(struct device *dev,
 
 unlock_fail:
 	mutex_unlock(&data->data_lock);
+
 	return ret;
 }
 
@@ -722,6 +727,7 @@ static ssize_t sgp_power_mode_store(struct device *dev,
 	mutex_unlock(&data->data_lock);
 
 	sgp_restart_iaq_thread(data);
+
 	return count;
 }
 
@@ -748,6 +754,7 @@ static int sgp_get_baseline(struct sgp_data *data, u16 *baseline_words)
 
 unlock_fail:
 	mutex_unlock(&data->data_lock);
+
 	return ret;
 }
 
@@ -831,6 +838,7 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	}
 
 	sgp_set_baseline(data, words, SGP_BASELINE_TYPE_IAQ);
+
 	return count;
 }
 
@@ -876,6 +884,7 @@ static ssize_t sgp_tvoc_baseline_store(struct device *dev,
 	}
 
 	sgp_set_baseline(data, &word, SGP_BASELINE_TYPE_TVOC);
+
 	return count;
 }
 
@@ -958,27 +967,26 @@ static int sgp_get_serial_id(struct sgp_data *data)
 
 unlock_fail:
 	mutex_unlock(&data->data_lock);
+
 	return ret;
 }
 
 static int sgp_check_compat(struct sgp_data *data,
 			    unsigned int product_id)
 {
-	struct sgp_version *supported_versions;
+	const struct sgp_version *supported_versions;
 	u16 ix, num_fs;
-	u16 product = SGP_VERS_PRODUCT(data);
-	u16 reserved = SGP_VERS_RESERVED(data);
-	u16 generation = SGP_VERS_GEN(data);
-	u16 major = SGP_VERS_MAJOR(data);
-	u16 minor = SGP_VERS_MINOR(data);
+	u16 product, generation, major, minor;
 
 	/* driver does not match product */
+	generation = SGP_VERS_GEN(data);
 	if (generation != 0) {
 		dev_err(&data->client->dev,
 			"incompatible product generation %d != 0", generation);
 		return -ENODEV;
 	}
 
+	product = SGP_VERS_PRODUCT(data);
 	if (product != product_id) {
 		dev_err(&data->client->dev,
 			"sensor reports a different product: 0x%04hx\n",
@@ -986,7 +994,7 @@ static int sgp_check_compat(struct sgp_data *data,
 		return -ENODEV;
 	}
 
-	if (reserved)
+	if (SGP_VERS_RESERVED(data))
 		dev_warn(&data->client->dev, "reserved bit is set\n");
 
 	/* engineering samples are not supported: no interface guarantees */
@@ -995,19 +1003,19 @@ static int sgp_check_compat(struct sgp_data *data,
 
 	switch (product) {
 	case SGP30:
-		supported_versions =
-			(struct sgp_version *)supported_versions_sgp30;
+		supported_versions = supported_versions_sgp30;
 		num_fs = ARRAY_SIZE(supported_versions_sgp30);
 		break;
 	case SGPC3:
-		supported_versions =
-			(struct sgp_version *)supported_versions_sgpc3;
+		supported_versions = supported_versions_sgpc3;
 		num_fs = ARRAY_SIZE(supported_versions_sgpc3);
 		break;
 	default:
 		return -ENODEV;
 	}
 
+	major = SGP_VERS_MAJOR(data);
+	minor = SGP_VERS_MAJOR(data);
 	for (ix = 0; ix < num_fs; ix++) {
 		if (major == supported_versions[ix].major &&
 		    minor >= supported_versions[ix].minor)
@@ -1015,6 +1023,7 @@ static int sgp_check_compat(struct sgp_data *data,
 	}
 	dev_err(&data->client->dev, "unsupported sgp version: %d.%d\n",
 		major, minor);
+
 	return -ENODEV;
 }
 
@@ -1195,6 +1204,7 @@ static int sgp_probe(struct i2c_client *client,
 
 	data->iaq_thread = kthread_run(sgp_iaq_threadfn, data,
 				       "%s-iaq", data->client->name);
+
 	return 0;
 }
 
@@ -1205,6 +1215,7 @@ static int sgp_remove(struct i2c_client *client)
 
 	if (data->iaq_thread)
 		kthread_stop(data->iaq_thread);
+
 	return 0;
 }
 
