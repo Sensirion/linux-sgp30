@@ -1018,7 +1018,7 @@ static int sgp_check_compat(struct sgp_data *data,
 	}
 
 	major = SGP_VERS_MAJOR(data);
-	minor = SGP_VERS_MAJOR(data);
+	minor = SGP_VERS_MINOR(data);
 	for (ix = 0; ix < num_fs; ix++) {
 		if (major == supported_versions[ix].major &&
 		    minor >= supported_versions[ix].minor)
