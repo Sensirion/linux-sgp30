@@ -569,6 +569,9 @@ static int sgp_read_raw(struct iio_dev *indio_dev,
 			*val = be16_to_cpu(words[0].value);
 			ret = IIO_VAL_INT;
 			break;
+		default:
+			ret = -EINVAL;
+			break;
 		}
 		mutex_unlock(&data->data_lock);
 		break;
