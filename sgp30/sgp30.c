@@ -72,7 +72,7 @@ enum sgp_cmd {
 	SGP_CMD_IAQ_MEASURE			= SGP_CMD(0x2008),
 	SGP_CMD_GET_BASELINE			= SGP_CMD(0x2015),
 	SGP_CMD_SET_BASELINE			= SGP_CMD(0x201e),
-	SGP_CMD_GET_TVOC_FACTORY_BASELINE	= SGP_CMD(0x20b3),
+	SGP_CMD_GET_TVOC_INCEPTIVE_BASELINE	= SGP_CMD(0x20b3),
 	SGP_CMD_GET_FEATURE_SET			= SGP_CMD(0x202f),
 	SGP_CMD_GET_SERIAL_ID			= SGP_CMD(0x3682),
 	SGP_CMD_SELFTEST			= SGP_CMD(0x2032),
@@ -120,7 +120,7 @@ enum sgp_features {
 	SGP_FEATURE_NONE			= 0,
 	SGP_FEATURE_SET_ABSOLUTE_HUMIDITY	= 1 << 0,
 	SGP_FEATURE_SET_POWER_MODE		= 1 << 1,
-	SGP_FEATURE_TVOC_FACTORY_BASELINE	= 1 << 2,
+	SGP_FEATURE_TVOC_INCEPTIVE_BASELINE	= 1 << 2,
 };
 
 struct sgp_data {
@@ -845,7 +845,7 @@ static ssize_t sgp_iaq_baseline_store(struct device *dev,
 	return count;
 }
 
-static ssize_t sgp_tvoc_factory_baseline_show(struct device *dev,
+static ssize_t sgp_tvoc_inceptive_baseline_show(struct device *dev,
 					      __attribute__((unused))
 					      struct device_attribute *attr,
 					      char *buf)
@@ -855,7 +855,7 @@ static ssize_t sgp_tvoc_factory_baseline_show(struct device *dev,
 	struct sgp_data *data = iio_priv(dev_to_iio_dev(dev));
 
 	mutex_lock(&data->data_lock);
-	ret = sgp_read_cmd(data, SGP_CMD_GET_TVOC_FACTORY_BASELINE,
+	ret = sgp_read_cmd(data, SGP_CMD_GET_TVOC_INCEPTIVE_BASELINE,
 			   &data->buffer, 1, SGP_CMD_DURATION_US);
 	if (ret < 0) {
 		mutex_unlock(&data->data_lock);
@@ -1053,7 +1053,7 @@ static void sgp_init(struct sgp_data *data)
 		data->sgp_feature_mask |= SGP_FEATURE_SET_ABSOLUTE_HUMIDITY;
 		if (SGP_VERS_MAJOR(data) == 1 && SGP_VERS_MINOR(data) >= 1) {
 			data->sgp_feature_mask |=
-				SGP_FEATURE_TVOC_FACTORY_BASELINE;
+				SGP_FEATURE_TVOC_INCEPTIVE_BASELINE;
 		}
 		break;
 	case SGPC3:
@@ -1069,7 +1069,7 @@ static void sgp_init(struct sgp_data *data)
 		data->iaq_init_fn = &sgpc3_iaq_init;
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 5) {
 			data->sgp_feature_mask |=
-				SGP_FEATURE_TVOC_FACTORY_BASELINE;
+				SGP_FEATURE_TVOC_INCEPTIVE_BASELINE;
 		}
 		if (SGP_VERS_MAJOR(data) == 0 && SGP_VERS_MINOR(data) >= 6) {
 			data->sgp_feature_mask |=
@@ -1088,8 +1088,8 @@ static IIO_DEVICE_ATTR(set_iaq_preheat_seconds, 0220, NULL,
 		       sgp_iaq_preheat_store, 0);
 static IIO_DEVICE_ATTR(iaq_baseline, 0664, sgp_iaq_baseline_show,
 		       sgp_iaq_baseline_store, 0);
-static IIO_DEVICE_ATTR(tvoc_factory_baseline, 0664,
-		       sgp_tvoc_factory_baseline_show,
+static IIO_DEVICE_ATTR(tvoc_inceptive_baseline, 0664,
+		       sgp_tvoc_inceptive_baseline_show,
 		       sgp_tvoc_baseline_store, 0);
 static IIO_DEVICE_ATTR(set_absolute_humidity, 0220, NULL,
 		       sgp_absolute_humidity_store, 0);
@@ -1101,7 +1101,7 @@ static struct attribute *sgp_attributes[] = {
 	&iio_dev_attr_in_feature_set_version.dev_attr.attr,
 	&iio_dev_attr_in_selftest.dev_attr.attr,
 	&iio_dev_attr_iaq_baseline.dev_attr.attr,
-	&iio_dev_attr_tvoc_factory_baseline.dev_attr.attr,
+	&iio_dev_attr_tvoc_inceptive_baseline.dev_attr.attr,
 	&iio_dev_attr_set_iaq_preheat_seconds.dev_attr.attr,
 	&iio_dev_attr_set_absolute_humidity.dev_attr.attr,
 	&iio_dev_attr_set_power_mode.dev_attr.attr,
