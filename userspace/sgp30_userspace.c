@@ -42,7 +42,7 @@
 static const unsigned char SGP30_CMD_IAQ_INIT[]     = { 0x20, 0x03 };
 static const unsigned char SGP30_CMD_IAQ_MEASURE[]  = { 0x20, 0x08 };
 static const unsigned char SGP30_CMD_SELFTEST[] = { 0x20, 0x32 };
-static const unsigned char SGP30_SELFTEST_OK[] = { 0x00, 0xd4 }
+static const unsigned char SGP30_SELFTEST_OK[] = { 0x00, 0xd4 };
 static const size_t SGP30_COMMAND_LENGTH = 2;
 
 static const size_t SGP30_FILENAME_LENGTH = 20;
