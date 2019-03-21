@@ -16,7 +16,7 @@ build-kernel-module:
     - apt-get update && apt-get install -y linux-headers-$(uname -r)
     - export KERNELDIR=/lib/modules/$(uname -r)/build
     - make check
-    - make clean && make
+    - make
 
 build-userspace:
   stage: build
