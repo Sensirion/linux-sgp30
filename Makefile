@@ -17,9 +17,6 @@ $(MODOBJ) = $(MODNAME)/$(MODNAME).ko
 
 all: modules
 
-sensirion-sgp/Makefile:
-	touch $@
-
 prepare:
 	cd $(KERNELDIR) && \
 	echo "CONFIG_CRC8=$(CONFIG_CRC8)" >> .config && \
