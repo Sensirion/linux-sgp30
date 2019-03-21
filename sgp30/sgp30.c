@@ -1244,6 +1244,7 @@ module_i2c_driver(sgp_driver);
 
 MODULE_AUTHOR("Andreas Brauchli <andreas.brauchli@sensirion.com>");
 MODULE_AUTHOR("Pascal Sachs <pascal.sachs@sensirion.com>");
+MODULE_AUTHOR("Raphael Nestler <raphael.nestler@sensirion.com>");
 MODULE_DESCRIPTION("Sensirion SGP gas sensors");
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("0.7.0");
+MODULE_VERSION("0.8.0");
