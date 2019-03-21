@@ -1,15 +1,14 @@
 image: sensirion/python
 
 stages:
-  - test
   - build
   - deploy
 
 variables:
   PACKAGE_NAME: "sgp30"
 
-test:
-  stage: test
+build-kernel-module:
+  stage: build
   tags:
     - linux
     - docker
@@ -17,10 +16,19 @@ test:
     - apt-get update && apt-get install -y linux-headers-$(uname -r)
     - export KERNELDIR=/lib/modules/$(uname -r)/build
     - make check
-    - make clean && make
+    - make
 
-build:
+build-userspace:
   stage: build
+  tags:
+    - linux
+    - docker
+  script:
+    - cd userspace
+    - make
+
+snapshot-master:
+  stage: deploy
   tags:
     - linux
     - docker
@@ -38,7 +46,7 @@ build:
       - README.md
       - sgp30/
 
-deploy:
+snapshot-tag:
   stage: deploy
   tags:
     - linux

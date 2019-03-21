@@ -7,3 +7,5 @@
 /Module.symvers
 /modules.order
 /linux
+.cache.mk
+userspace/sgp30_test
