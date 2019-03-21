@@ -18,6 +18,15 @@ build-kernel-module:
     - make check
     - make clean && make
 
+build-userspace:
+  stage: build
+  tags:
+    - linux
+    - docker
+  script:
+    - cd userspace
+    - make
+
 snapshot-master:
   stage: deploy
   tags:
