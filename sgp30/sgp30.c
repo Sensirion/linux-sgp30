@@ -192,12 +192,8 @@ static const struct iio_chan_spec sgp30_channels[] = {
 #else /* IIO_MOD_ETHANOL */
 		.extend_name = "ethanol",
 #endif /* IIO_MOD_ETHANOL */
-		.info_mask_separate =
-			BIT(IIO_CHAN_INFO_RAW),
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
 		.address = SGP30_SIG_ETOH_IDX,
-		.scan_type = {
-			.endianness = IIO_BE,
-		},
 	},
 	{
 		.type = IIO_CONCENTRATION,
@@ -207,12 +203,8 @@ static const struct iio_chan_spec sgp30_channels[] = {
 #else /* IIO_MOD_H2 */
 		.extend_name = "h2",
 #endif /* IIO_MOD_H2 */
-		.info_mask_separate =
-			BIT(IIO_CHAN_INFO_RAW),
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
 		.address = SGP30_SIG_H2_IDX,
-		.scan_type = {
-			.endianness = IIO_BE,
-		},
 	},
 };
 
@@ -232,12 +224,8 @@ static const struct iio_chan_spec sgpc3_channels[] = {
 #else /* IIO_MOD_ETHANOL */
 		.extend_name = "ethanol",
 #endif /* IIO_MOD_ETHANOL */
-		.info_mask_separate =
-			BIT(IIO_CHAN_INFO_RAW),
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
 		.address = SGPC3_SIG_ETOH_IDX,
-		.scan_type = {
-			.endianness = IIO_BE,
-		},
 	},
 };
 
@@ -455,8 +443,7 @@ static int sgp_iaq_threadfn(void *p)
 		ret = sgp_measure_iaq(data);
 		if (ret && ret != -EBUSY) {
 			dev_warn(&data->client->dev,
-				 "IAQ measurement error [%d]\n",
-				 ret);
+				 "IAQ measurement error [%d]\n", ret);
 		}
 unlock_sleep_continue:
 		next_update_jiffies = jiffies + data->measure_interval_jiffies;
