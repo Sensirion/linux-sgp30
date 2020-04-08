@@ -1058,7 +1058,7 @@ static void sgp_init(struct sgp_data *data)
 				SGP_FEATURE_SET_POWER_MODE;
 		}
 		break;
-	};
+	}
 }
 
 static IIO_DEVICE_ATTR(in_serial_id, 0444, sgp_serial_id_show, NULL, 0);
