@@ -51,11 +51,11 @@ converting the relative humidity and temperature. The following units are used:
 AH in mg/m^3, RH in percent (0..100), T in degrees Celsius, and exp() being the
 base-e exponential function.
 
-                  RH            exp(17.62 * T)
-                ----- * 6.112 * --------------
-                100.0            243.12 + T
-  AH = 216.7 * ------------------------------- * 1000
-                        273.15 + T
+                  RH                 17.62 * T
+                ----- * 6.112 * exp(------------)
+                100.0                243.12 + T
+  AH = 216.7 * ---------------------------------- * 1000
+                            273.15 + T
 
 Writing a value of 0 to set_absolute_humidity disables the humidity
 compensation. Devices not supporting humidity compensation (SGPC3 with feature
